@@ -1,0 +1,20 @@
+[
+  { "query": "can you grab before/after screenshots of the checkout page for my PR? i changed the order summary card in src/components/OrderSummary.tsx", "should_trigger": true },
+  { "query": "I refactored the navbar to use the new design tokens. Make a visual changelog so the designer can see what moved, desktop and mobile please", "should_trigger": true },
+  { "query": "what does my branch actually look like compared to main? I touched a bunch of tailwind classes in the settings pages and I'm scared something shifted", "should_trigger": true },
+  { "query": "PR #482 changes the empty and error states of the invoices table. Can you show me screenshots of those states before and after, our staging API is not safe to hit so you'll have to fake the data", "should_trigger": true },
+  { "query": "Our backend isn't running on my laptop and the dashboard just shows skeletons. I need it to render with realistic fake data so I can review the chart changes I made", "should_trigger": true },
+  { "query": "Show me what changed in the UI between v2.3.0 and HEAD for the onboarding flow", "should_trigger": true },
+  { "query": "my reviewer asked for screenshots of the new dark theme toggle in the header, the dropdown open, and the mobile layout. can you produce them and put them in the PR description?", "should_trigger": true },
+  { "query": "I bumped our component library from 4.x to 5.x. Can you check visually which screens changed so I know what to QA?", "should_trigger": true },
+  { "query": "Mock the GraphQL and websocket backends so the live scoreboard page renders, then compare it before and after my styling changes", "should_trigger": true },
+  { "query": "Set up Playwright visual regression tests with toHaveScreenshot for our CI pipeline so every PR is checked automatically", "should_trigger": false },
+  { "query": "Write MSW handlers for our /api/users endpoints so the Jest unit tests stop hitting the network", "should_trigger": false },
+  { "query": "take a screenshot of https://example.com/pricing and tell me what fonts they use", "should_trigger": false },
+  { "query": "Review this diff for bugs: I changed how the date picker parses user input in utils/date.ts", "should_trigger": false },
+  { "query": "Build me a changelog page in our Next.js app that lists release notes from CHANGELOG.md", "should_trigger": false },
+  { "query": "generate a CHANGELOG.md entry for the commits on this branch, conventional commits style", "should_trigger": false },
+  { "query": "The login button is misaligned on Safari only. Can you figure out which CSS rule causes it and fix it?", "should_trigger": false },
+  { "query": "Create a Storybook story for the new Badge component with all its variants", "should_trigger": false },
+  { "query": "Our API returns 500 on POST /orders when the cart is empty. Debug the NestJS controller", "should_trigger": false }
+]
