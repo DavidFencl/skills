@@ -47,31 +47,26 @@ install_skills() {
   done
 }
 
-declare -A HARNESS_HOME=(
-  [claude]="${HOME}/.claude"
-  [codex]="${HOME}/.codex"
-  [grok]="${HOME}/.grok"
-  [pi]="${HOME}/.pi"
-)
-declare -A HARNESS_SKILLS=(
-  [claude]="${HOME}/.claude/skills"
-  [codex]="${HOME}/.codex/skills"
-  [grok]="${HOME}/.grok/skills"
-  [pi]="${HOME}/.pi/agent/skills"
-)
+# Plain functions instead of associative arrays, so the script runs on macOS's bash 3.2.
+harness_home() {
+  echo "${HOME}/.$1"
+}
+harness_skills() {
+  if [ "$1" = pi ]; then echo "${HOME}/.pi/agent/skills"; else echo "${HOME}/.$1/skills"; fi
+}
 
 for harness in claude codex grok pi; do
-  if [ ! -d "${HARNESS_HOME[$harness]}" ]; then
-    echo "Skipping ${harness} — ${HARNESS_HOME[$harness]} not found"
+  if [ ! -d "$(harness_home "$harness")" ]; then
+    echo "Skipping ${harness} — $(harness_home "$harness") not found"
     continue
   fi
-  echo "Installing harness-neutral skills for ${harness} → ${HARNESS_SKILLS[$harness]}"
-  install_skills "$SCRIPT_DIR/skills" "${HARNESS_SKILLS[$harness]}"
+  echo "Installing harness-neutral skills for ${harness} → $(harness_skills "$harness")"
+  install_skills "$SCRIPT_DIR/skills" "$(harness_skills "$harness")"
 done
 
-if [ -d "${HARNESS_HOME[pi]}" ]; then
-  echo "Installing pi-only skills → ${HARNESS_SKILLS[pi]}"
-  install_skills "$SCRIPT_DIR/pi/skills" "${HARNESS_SKILLS[pi]}"
+if [ -d "$(harness_home pi)" ]; then
+  echo "Installing pi-only skills → $(harness_skills pi)"
+  install_skills "$SCRIPT_DIR/pi/skills" "$(harness_skills pi)"
 
   GLOBAL_EXTENSIONS_DIR="${HOME}/.pi/agent/extensions"
   mkdir -p "$GLOBAL_EXTENSIONS_DIR"

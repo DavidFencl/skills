@@ -22,7 +22,7 @@ Use the project's real shared components, tokens and helpers, with their existin
 
 ## Your files
 
-You are lane `<lane id>`. Create or edit only these paths:
+You are lane `<lane id>`. Create or edit only these paths, which are the same as your `owns` entry in `lanes.json`:
 - `<preview directory>/variant-<lane id>/` (create it)
 
 Other designers are writing other directories in the same checkout at the same time. Do not touch anything outside your paths. In particular, leave shared components, tokens, global styles, lockfiles and other lanes' directories alone. Do not run formatters or codemods over the whole repository.

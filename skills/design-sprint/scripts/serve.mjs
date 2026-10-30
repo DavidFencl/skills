@@ -5,14 +5,14 @@
 //   node serve.mjs --sprint .design-sprint/<slug> [--port 4390]
 
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, readFileSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
 import { createServer } from 'node:http';
-import { extname, join, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PAGE = fileURLToPath(new URL('../assets/decisions.html', import.meta.url));
 const MAX_BODY = 64 * 1024;
-const TYPES = new Set(['pick', 'reprompt', 'submit']);
+const MAX_FIELD = 8000;
 const MIME = {
 	'.html': 'text/html; charset=utf-8',
 	'.json': 'application/json; charset=utf-8',
@@ -24,33 +24,53 @@ const MIME = {
 	'.css': 'text/css; charset=utf-8',
 	'.js': 'text/javascript; charset=utf-8',
 };
+const ID = '[A-Za-z0-9._-]+';
+const TARGETS = {
+	pick: new RegExp(`^(direction|decision:${ID})$`),
+	reprompt: new RegExp(`^(direction|sprint|variant:${ID}|decision:${ID})$`),
+};
 
+/** Complete records only: a line still being appended is not valid JSON yet, so it is skipped until it is. */
 export function readFeedback(sprintDir) {
 	const file = join(sprintDir, 'feedback.jsonl');
 	if (!existsSync(file)) return [];
-	return readFileSync(file, 'utf8')
-		.split('\n')
-		.filter(Boolean)
-		.map((line) => JSON.parse(line));
+	return readFileSync(file, 'utf8').split('\n').filter(Boolean).flatMap((line) => {
+		try {
+			return [JSON.parse(line)];
+		} catch {
+			return [];
+		}
+	});
 }
 
 /** Returns a normalized event or an error message. */
 export function parseFeedback(body) {
 	if (!body || typeof body !== 'object' || Array.isArray(body)) return 'Expected a JSON object.';
-	if (!TYPES.has(body.type)) return `type must be one of: ${[...TYPES].join(', ')}.`;
 	const event = { type: body.type };
 	for (const key of ['target', 'option', 'text']) {
 		if (body[key] === undefined || body[key] === null) continue;
-		if (typeof body[key] !== 'string' || body[key].length > 8000) return `${key} must be a string.`;
+		if (typeof body[key] !== 'string' || body[key].length > MAX_FIELD) return `${key} must be a string of at most ${MAX_FIELD} characters.`;
 		event[key] = body[key];
 	}
-	if (event.type === 'reprompt' && !event.text?.trim()) return 'A re-prompt needs text.';
-	if (event.type === 'pick' && !event.target) return 'A pick needs a target.';
-	return event;
+	switch (body.type) {
+		case 'pick':
+			if (!TARGETS.pick.test(event.target ?? '')) return 'A pick needs a target of direction or decision:<id>.';
+			if (!new RegExp(`^${ID}$`).test(event.option ?? '')) return 'A pick needs an option id.';
+			return event;
+		case 'reprompt':
+			if (!TARGETS.reprompt.test(event.target ?? '')) return 'A re-prompt needs a target of direction, sprint, variant:<id> or decision:<id>.';
+			if (!event.text?.trim()) return 'A re-prompt needs text.';
+			return event;
+		case 'submit':
+			if (!event.text?.trim()) return 'A submission needs the answer text.';
+			return event;
+		default:
+			return 'type must be one of: pick, reprompt, submit.';
+	}
 }
 
 function send(res, status, body, type = 'application/json; charset=utf-8') {
-	res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store' });
+	res.writeHead(status, { 'content-type': type, 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
 	res.end(typeof body === 'string' || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
 
@@ -72,11 +92,44 @@ function readBody(req) {
 	});
 }
 
+/**
+ * Only the page itself may write feedback. A JSON content type forces a CORS preflight that this
+ * server never grants, the Origin must be this server, and the Host must be loopback (DNS rebinding).
+ */
+function rejectForeignWrite(req, port) {
+	const hosts = new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+	if (!hosts.has(req.headers.host ?? '')) return 'Unexpected Host header.';
+	const origin = req.headers.origin;
+	if (origin !== undefined && !hosts.has(origin.replace(/^http:\/\//, ''))) return 'Cross-origin writes are not allowed.';
+	if (!/^application\/json\b/i.test(req.headers['content-type'] ?? '')) return 'Content-Type must be application/json.';
+	return null;
+}
+
+/** Resolves a /files/ path to a real file inside the sprint directory, following no symlink out of it. */
+export function resolveSprintFile(root, requestPath) {
+	const realRoot = realpathSync(root);
+	const candidate = resolve(realRoot, requestPath);
+	const inside = (file) => {
+		const rel = relative(realRoot, file);
+		return rel !== '' && !isAbsolute(rel) && rel.split(sep)[0] !== '..';
+	};
+	if (!inside(candidate) || !existsSync(candidate)) return { status: inside(candidate) ? 404 : 403 };
+	const real = realpathSync(candidate);
+	if (!inside(real)) return { status: 403 };
+	if (!statSync(real).isFile()) return { status: 404 };
+	return { status: 200, file: real };
+}
+
 export function createSprintServer(sprintDir) {
 	const root = resolve(sprintDir);
-	return createServer(async (req, res) => {
-		const url = new URL(req.url ?? '/', 'http://localhost');
+	const server = createServer(async (req, res) => {
 		try {
+			let url;
+			try {
+				url = new URL(req.url ?? '/', 'http://localhost');
+			} catch {
+				return send(res, 400, { error: 'Malformed request target.' });
+			}
 			if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
 				return send(res, 200, readFileSync(PAGE), MIME['.html']);
 			}
@@ -88,6 +141,8 @@ export function createSprintServer(sprintDir) {
 			if (url.pathname === '/api/feedback') {
 				if (req.method === 'GET') return send(res, 200, readFeedback(root));
 				if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed.' });
+				const foreign = rejectForeignWrite(req, server.address().port);
+				if (foreign) return send(res, 403, { error: foreign });
 				let body;
 				try {
 					body = JSON.parse(await readBody(req));
@@ -101,12 +156,14 @@ export function createSprintServer(sprintDir) {
 				return send(res, 201, record);
 			}
 			if (req.method === 'GET' && url.pathname.startsWith('/files/')) {
-				const file = resolve(root, decodeURIComponent(url.pathname.slice('/files/'.length)));
-				const inside = relative(root, file);
-				if (inside.startsWith('..') || inside.startsWith(sep) || inside === '') {
-					return send(res, 403, { error: 'Outside the sprint directory.' });
+				let requestPath;
+				try {
+					requestPath = decodeURIComponent(url.pathname.slice('/files/'.length));
+				} catch {
+					return send(res, 400, { error: 'Malformed path.' });
 				}
-				if (!existsSync(file) || !statSync(file).isFile()) return send(res, 404, { error: 'Not found.' });
+				const { status, file } = resolveSprintFile(root, requestPath);
+				if (status !== 200) return send(res, status, { error: status === 403 ? 'Outside the sprint directory.' : 'Not found.' });
 				return send(res, 200, readFileSync(file), MIME[extname(file)] ?? 'application/octet-stream');
 			}
 			return send(res, 404, { error: 'Not found.' });
@@ -114,6 +171,7 @@ export function createSprintServer(sprintDir) {
 			return send(res, 500, { error: error.message });
 		}
 	});
+	return server;
 }
 
 function main() {

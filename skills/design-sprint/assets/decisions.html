@@ -120,7 +120,27 @@ function withKeep(options, keepLabel, current) {
 }
 const optionId = (decision, option) => (option.keep ? `${decision.id}-keep` : option.id);
 
+// Picks of retired variants or removed options are dropped, so the answer only names what is on the page.
+function activeChoices() {
+	const choices = new Map();
+	const variants = withKeep((state.sprint?.variants ?? []).filter((variant) => !variant.retired), '', state.sprint?.current);
+	choices.set('direction', new Set(variants.map((variant) => (variant.keep ? KEEP : variant.id))));
+	for (const decision of state.sprint?.decisions ?? []) {
+		choices.set(`decision:${decision.id}`, new Set(withKeep(decision.options ?? [], '', decision.current).map((option) => optionId(decision, option))));
+	}
+	return choices;
+}
+function reconcilePicks() {
+	const choices = activeChoices();
+	let changed = false;
+	for (const [target, value] of Object.entries(picks)) {
+		if (!choices.get(target)?.has(value)) { delete picks[target]; changed = true; }
+	}
+	if (changed) localStorage.setItem(storageKey(), JSON.stringify(picks));
+}
+
 function answerText() {
+	reconcilePicks();
 	const parts = [];
 	const direction = picks.direction;
 	if (direction) parts.push(direction === KEEP ? 'Direction: keep current' : `Direction ${direction}`);
@@ -139,11 +159,27 @@ const modelLabel = (model) => (state.sprint.blind && !submitted() ? 'model hidde
 function fill(template) {
 	return template.replaceAll('{theme}', encodeURIComponent(state.theme ?? '')).replaceAll('{width}', String(state.viewport));
 }
+// Previews may only load http(s) URLs; anything else (javascript:, data:, file:) is refused.
+function safeUrl(raw) {
+	try {
+		const url = new URL(fill(raw), location.href);
+		return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+	} catch {
+		return null;
+	}
+}
+function imageUrl(raw) {
+	return /^(https?:)?\/\//.test(raw) || raw.startsWith('/') ? safeUrl(raw) : safeUrl(`/files/${raw}`);
+}
 function previewFor(item, height) {
 	const box = el('div', { className: 'preview' });
 	box.style.height = `${item.height ?? height}px`;
-	if (item.url) {
-		const frame = el('iframe', { title: item.label ?? 'preview', src: fill(item.url), loading: 'lazy' });
+	const url = item.url ? safeUrl(item.url) : null;
+	if (url) {
+		const frame = el('iframe', { title: item.label ?? 'preview', loading: 'lazy' });
+		// A preview served by this page's own server gets an opaque origin, so it cannot read or drive the page.
+		frame.setAttribute('sandbox', url.origin === location.origin ? 'allow-scripts allow-forms' : 'allow-scripts allow-forms allow-same-origin');
+		frame.src = url.href;
 		box.append(frame);
 		const fit = () => {
 			const scale = Math.min(1, box.clientWidth / state.viewport);
@@ -152,14 +188,15 @@ function previewFor(item, height) {
 			frame.style.transform = `scale(${scale})`;
 		};
 		new ResizeObserver(fit).observe(box);
-	} else if (item.image) {
-		const src = /^(https?:)?\/\//.test(item.image) || item.image.startsWith('/') ? item.image : `/files/${item.image}`;
-		box.append(el('img', { src, alt: item.label ?? 'preview' }));
+	} else if (item.image && imageUrl(item.image)) {
+		box.append(el('img', { src: imageUrl(item.image).href, alt: item.label ?? 'preview' }));
 	} else {
-		box.append(el('div', { className: 'empty', textContent: item.keep ? 'Keep today’s version' : 'No preview' }));
+		const refused = (item.url || item.image) && !url;
+		box.append(el('div', { className: 'empty', textContent: refused ? 'Preview URL refused: only http(s) and relative URLs load.' : item.keep ? 'Keep today’s version' : 'No preview' }));
 	}
 	return box;
 }
+function keyed(node, key) { node.dataset.key = key; return node; }
 function draftArea(key, label) {
 	const id = `draft-${key.replace(/[^a-z0-9-]/gi, '_')}`;
 	const area = el('textarea', { id, value: drafts[key] ?? '' });
@@ -193,7 +230,7 @@ function renderVariants() {
 			variant.round ? el('span', { className: 'tag', textContent: `Round ${variant.round}` }) : null,
 			variant.model ? el('span', { className: 'tag', textContent: modelLabel(variant.model) }) : null,
 			el('span', { className: 'spacer' }),
-			variant.url ? el('a', { href: fill(variant.url), target: '_blank', rel: 'noopener', textContent: 'Open' }) : null,
+			variant.url && safeUrl(variant.url) ? el('a', { href: safeUrl(variant.url).href, target: '_blank', rel: 'noopener noreferrer', textContent: 'Open' }) : null,
 			pickButton('direction', value, variant.keep ? 'keep' : variant.id),
 		]);
 		const card = el('article', { className: 'card' }, [head, previewFor(variant, 560)]);
@@ -205,7 +242,7 @@ function renderVariants() {
 			card.append(el('p', { className: 'muted' }, [el('strong', { textContent: `Second opinion (${modelLabel(review.model)}): ` }), review.text]));
 		}
 		if (variant.keep && variant.note) card.append(el('p', { className: 'muted', textContent: variant.note }));
-		if (!variant.keep) card.append(el('details', {}, [el('summary', { textContent: `Change variant ${variant.id}` }), ...draftArea(`variant:${variant.id}`, `What should change in ${variant.id}?`)]));
+		if (!variant.keep) card.append(keyed(el('details', {}, [el('summary', { textContent: `Change variant ${variant.id}` }), ...draftArea(`variant:${variant.id}`, `What should change in ${variant.id}?`)]), `variant:${variant.id}`));
 		return card;
 	}));
 }
@@ -233,7 +270,7 @@ function renderDecisions() {
 					option.note ? el('p', { className: 'muted', textContent: option.note }) : null,
 				]);
 			})),
-			el('details', {}, [el('summary', { textContent: 'None of these fit' }), ...draftArea(target, `What would you want for “${decision.question}”?`)]),
+			keyed(el('details', {}, [el('summary', { textContent: 'None of these fit' }), ...draftArea(target, `What would you want for “${decision.question}”?`)]), target),
 		]);
 	}));
 }
@@ -272,12 +309,18 @@ function renderControls() {
 
 function render(force = false) {
 	if (!state.sprint) return;
-	const signature = JSON.stringify([state.sprint, state.viewport, state.theme]);
+	const signature = JSON.stringify([state.sprint, state.viewport, state.theme, submitted()]);
 	if (force || signature !== state.signature) {
 		state.signature = signature;
+		const open = new Set([...document.querySelectorAll('details[open]')].map((details) => details.dataset.key));
+		const focused = document.activeElement?.dataset?.draft;
+		const selection = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
 		renderControls();
 		renderVariants();
 		renderDecisions();
+		for (const details of document.querySelectorAll('details[data-key]')) details.open = open.has(details.dataset.key);
+		const area = focused && document.querySelector(`textarea[data-draft="${CSS.escape(focused)}"]`);
+		if (area) { area.focus(); area.setSelectionRange(...selection); }
 	}
 	refreshPicks();
 	renderHistory();

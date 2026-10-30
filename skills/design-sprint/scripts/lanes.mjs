@@ -2,7 +2,8 @@
 // Runs design-sprint variant lanes on different models, each through its own CLI, in parallel.
 // A model descriptor is `<cli>:<model>[@<effort>]`, e.g. `claude:opus@high`,
 // `codex:gpt-6.1-sol@high`, `grok:grok-4.7`, `pi:openrouter/~google/gemini-pro-latest@high`.
-// An empty model (`codex:`) uses that CLI's own default model.
+// An empty model (`codex:`) uses that CLI's own default model. `@<effort>` is read as an effort only
+// when it names a known level, so model ids that contain `@` stay intact.
 //
 //   node lanes.mjs roster [--cwd <project>]           print the models a sprint would use
 //   node lanes.mjs run --sprint <dir> --plan <file> [--only A,C] [--timeout <seconds>]
@@ -10,12 +11,16 @@
 // Node built-ins only.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const CLIS = ['claude', 'codex', 'grok', 'pi'];
+export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+const KILL_GRACE_MS = 5000;
+const DRAIN_MS = 2000;
 
 export function parseDescriptor(descriptor) {
 	const colon = descriptor.indexOf(':');
@@ -25,19 +30,23 @@ export function parseDescriptor(descriptor) {
 	let model = descriptor.slice(colon + 1);
 	let effort;
 	const at = model.lastIndexOf('@');
-	if (at !== -1) {
-		effort = model.slice(at + 1) || undefined;
+	if (at !== -1 && EFFORTS.includes(model.slice(at + 1))) {
+		effort = model.slice(at + 1);
 		model = model.slice(0, at);
 	}
 	return { cli, model: model && model !== 'default' ? model : undefined, effort };
 }
 
-/** The headless command for one lane. Lanes may write files inside `cwd`; they must not start other agents. */
+/**
+ * The headless command for one lane. Codex and Grok run in their own workspace sandboxes. Claude runs
+ * with edit-only permission, so it cannot run shell commands or edit outside the project. pi has no
+ * sandbox; its shell tool is removed, but its file tools can still write anywhere the user can.
+ */
 export function buildCommand({ cli, model, effort }, { prompt, promptFile, cwd, lastMessageFile }) {
 	switch (cli) {
 		case 'claude':
 			return { command: 'claude', args: ['-p', ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []),
-				'--permission-mode', 'acceptEdits', '--no-session-persistence', prompt] };
+				'--permission-mode', 'acceptEdits', '--disallowedTools', 'Bash', '--no-session-persistence', prompt] };
 		case 'codex':
 			return { command: 'codex', args: ['exec', ...(model ? ['-m', model] : []), ...(effort ? ['-c', `model_reasoning_effort=${effort}`] : []),
 				'-s', 'workspace-write', '-C', cwd, '--skip-git-repo-check', '-o', lastMessageFile, prompt] };
@@ -46,7 +55,7 @@ export function buildCommand({ cli, model, effort }, { prompt, promptFile, cwd, 
 				'--permission-mode', 'auto', '--sandbox', 'workspace', '--no-subagents', '--cwd', cwd] };
 		case 'pi':
 			return { command: 'pi', args: ['-p', ...(model ? ['--model', model] : []), ...(effort ? ['--thinking', effort] : []),
-				'--no-session', '--no-skills', prompt] };
+				'--no-session', '--no-skills', '--exclude-tools', 'bash', prompt] };
 		default:
 			throw new Error(`Unknown CLI "${cli}".`);
 	}
@@ -95,53 +104,115 @@ function preflight({ cli, model }) {
 	return null;
 }
 
-export async function runLane(lane, { sprintDir, cwd, timeoutMs = 0, check = preflight, spawnImpl = spawn }) {
+const groups = new Set();
+function killGroup(child, signal) {
+	try {
+		if (process.platform === 'win32') child.kill(signal);
+		else process.kill(-child.pid, signal);
+	} catch {
+		// The group already exited.
+	}
+}
+
+export async function runLane(lane, { sprintDir, cwd, timeoutMs = 0, check = preflight, spawnImpl = spawn, killGraceMs = KILL_GRACE_MS }) {
 	const dir = join(sprintDir, 'lanes');
 	mkdirSync(dir, { recursive: true });
 	const descriptor = parseDescriptor(lane.model);
-	const promptFile = resolve(sprintDir, lane.prompt);
 	const files = {
 		stdout: join(dir, `${lane.id}.stdout.txt`),
 		stderr: join(dir, `${lane.id}.stderr.txt`),
 		lastMessage: join(dir, `${lane.id}.last.txt`),
 		receipt: join(dir, `${lane.id}.receipt.json`),
 	};
+	for (const file of Object.values(files)) rmSync(file, { force: true });
 	const started = Date.now();
-	const receipt = { id: lane.id, model: lane.model, cli: descriptor.cli, cliModel: descriptor.model ?? null, effort: descriptor.effort ?? null, status: 'dropout', startedAt: new Date(started).toISOString() };
+	const receipt = { id: lane.id, model: lane.model, cli: descriptor.cli, cliModel: descriptor.model ?? null, effort: descriptor.effort ?? null,
+		status: 'dropout', startedAt: new Date(started).toISOString() };
 	const finish = (fields) => {
 		Object.assign(receipt, fields, { elapsedMs: Date.now() - started });
 		writeFileSync(files.receipt, `${JSON.stringify(receipt, null, '\t')}\n`);
 		return receipt;
 	};
 
+	const promptFile = resolve(sprintDir, lane.promptFile ?? '');
+	if (!lane.promptFile || !existsSync(promptFile)) return finish({ reason: `Prompt file not found: ${lane.promptFile ?? '(none)'}.` });
 	const problem = check(descriptor);
 	if (problem) return finish({ reason: problem });
 	const prompt = readFileSync(promptFile, 'utf8');
 	const { command, args } = lane.command ?? buildCommand(descriptor, { prompt, promptFile, cwd, lastMessageFile: files.lastMessage });
 
 	return new Promise((resolveLane) => {
-		const child = spawnImpl(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'] });
+		const child = spawnImpl(command, args, { cwd, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
+		groups.add(child);
 		const out = [];
 		const err = [];
 		let timedOut = false;
-		const timer = timeoutMs > 0 ? setTimeout(() => { timedOut = true; child.kill('SIGTERM'); }, timeoutMs) : null;
-		child.stdout.on('data', (chunk) => out.push(chunk));
-		child.stderr.on('data', (chunk) => err.push(chunk));
-		child.on('error', (error) => {
-			clearTimeout(timer);
-			resolveLane(finish({ reason: error.code === 'ENOENT' ? `${command} is not installed.` : error.message }));
-		});
-		child.on('close', (code) => {
-			clearTimeout(timer);
+		let exitCode = null;
+		let done = false;
+		const timers = [];
+		const settle = (fields) => {
+			if (done) return;
+			done = true;
+			timers.forEach(clearTimeout);
+			groups.delete(child);
+			resolveLane(finish(fields));
+		};
+		const complete = () => {
+			if (done) return;
+			// Reap anything the lane left running, such as a dev server or a watcher.
+			killGroup(child, 'SIGKILL');
 			const stdout = Buffer.concat(out).toString('utf8');
 			writeFileSync(files.stdout, stdout);
 			writeFileSync(files.stderr, Buffer.concat(err).toString('utf8'));
 			if (!existsSync(files.lastMessage)) writeFileSync(files.lastMessage, stdout);
-			if (timedOut) return resolveLane(finish({ exitCode: code, reason: `Timed out after ${timeoutMs / 1000}s.` }));
-			if (code !== 0) return resolveLane(finish({ exitCode: code, reason: `Exited with ${code}; see ${files.stderr}.` }));
-			resolveLane(finish({ status: 'complete', exitCode: 0, output: files.lastMessage }));
+			if (timedOut) return settle({ exitCode, reason: `Timed out after ${timeoutMs / 1000}s.` });
+			if (exitCode !== 0) return settle({ exitCode, reason: `Exited with ${exitCode}; see ${files.stderr}.` });
+			settle({ status: 'complete', exitCode: 0, output: files.lastMessage });
+		};
+		if (timeoutMs > 0) {
+			timers.push(setTimeout(() => {
+				timedOut = true;
+				killGroup(child, 'SIGTERM');
+				timers.push(setTimeout(() => killGroup(child, 'SIGKILL'), killGraceMs));
+			}, timeoutMs));
+		}
+		child.stdout.on('data', (chunk) => out.push(chunk));
+		child.stderr.on('data', (chunk) => err.push(chunk));
+		child.on('error', (error) => settle({ reason: error.code === 'ENOENT' ? `${command} is not installed.` : error.message }));
+		child.on('exit', (code, signal) => {
+			exitCode = code ?? signal;
+			// A grandchild may keep the pipes open after the lane exits; stop waiting for them.
+			timers.push(setTimeout(() => {
+				child.stdout.destroy();
+				child.stderr.destroy();
+				complete();
+			}, DRAIN_MS));
 		});
+		child.on('close', complete);
 	});
+}
+
+/** Content hashes of files git reports as changed or untracked, so lanes' stray writes can be found. */
+export function snapshotChanges(cwd) {
+	const status = spawnSync('git', ['status', '--porcelain=v1', '-z', '-uall'], { cwd, encoding: 'utf8' });
+	if (status.status !== 0) return null;
+	const snapshot = {};
+	const entries = status.stdout.split('\0').filter(Boolean);
+	for (let index = 0; index < entries.length; index += 1) {
+		const entry = entries[index];
+		const path = entry.slice(3);
+		if (entry[0] === 'R' || entry[0] === 'C') index += 1;
+		const file = join(cwd, path);
+		snapshot[path] = existsSync(file) ? createHash('sha1').update(readFileSync(file)).digest('hex') : 'deleted';
+	}
+	return snapshot;
+}
+
+/** Paths that changed during the run outside every lane's own paths and the sprint directory. */
+export function outsideChanges(before, after, allowed) {
+	const paths = new Set([...Object.keys(before), ...Object.keys(after)]);
+	const isAllowed = (path) => allowed.some((prefix) => path === prefix || path.startsWith(prefix.endsWith('/') ? prefix : `${prefix}/`));
+	return [...paths].filter((path) => before[path] !== after[path] && !isAllowed(path)).sort();
 }
 
 function option(args, flag) {
@@ -164,8 +235,23 @@ async function main() {
 		const lanes = plan.lanes.filter((lane) => !only || only.includes(lane.id));
 		const cwd = resolve(dirname(planFile), plan.cwd ?? '.');
 		const timeoutMs = Number(option(args, '--timeout') ?? 0) * 1000;
+		for (const signal of ['SIGINT', 'SIGTERM']) {
+			process.on(signal, () => {
+				for (const child of groups) killGroup(child, 'SIGKILL');
+				process.exit(130);
+			});
+		}
+		const before = snapshotChanges(cwd);
 		const receipts = await Promise.all(lanes.map((lane) => runLane(lane, { sprintDir: resolve(sprintDir), cwd, timeoutMs })));
-		console.log(JSON.stringify(receipts.map(({ id, model, status, reason, elapsedMs }) => ({ id, model, status, reason, elapsedMs })), null, 2));
+		const after = snapshotChanges(cwd);
+		const sprintPath = relative(cwd, resolve(sprintDir)).split(sep).join('/');
+		const allowed = [sprintPath, ...plan.lanes.flatMap((lane) => lane.owns ?? [])];
+		const stray = before && after ? outsideChanges(before, after, allowed) : null;
+		writeFileSync(join(resolve(sprintDir), 'lanes', 'outside-changes.json'), `${JSON.stringify(stray, null, '\t')}\n`);
+		console.log(JSON.stringify({
+			lanes: receipts.map(({ id, model, status, reason, elapsedMs }) => ({ id, model, status, reason, elapsedMs })),
+			outsideChanges: stray ?? 'not a git repository; changes outside lane paths were not checked',
+		}, null, 2));
 		process.exitCode = receipts.some((receipt) => receipt.status === 'complete') ? 0 : 1;
 		return;
 	}

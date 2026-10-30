@@ -70,11 +70,20 @@ Build in this order:
    - the fixtures: realistic long and localized names, mixed states, an empty state;
    - a `.design-sprint/<slug>/` directory, excluded from git through `.git/info/exclude`.
 2. **Write one lane prompt per model** from `<skill-dir>/references/lane-prompt.md` into `.design-sprint/<slug>/lanes/<id>.prompt.md`. Every lane gets the same brief. Each lane owns only `variant-<id>/`, so the lanes can write in the same checkout at the same time.
-3. **Write `.design-sprint/<slug>/lanes.json`**: `{ "cwd": "<project root, relative to this file>", "lanes": [ { "id": "A", "model": "claude:opus@high", "prompt": "lanes/A.prompt.md" } ] }`.
+3. **Write `.design-sprint/<slug>/lanes.json`**: `{ "cwd": "<project root, relative to this file>", "lanes": [ { "id": "A", "model": "claude:opus@high", "promptFile": "lanes/A.prompt.md", "owns": ["<preview directory>/variant-A"] } ] }`.
+   - `promptFile` is relative to the sprint directory.
+   - `owns` lists the lane's paths, relative to `cwd`.
 4. **Run all lanes in parallel** with `node <skill-dir>/scripts/lanes.mjs run --sprint .design-sprint/<slug> --plan .design-sprint/<slug>/lanes.json`. Run it in the background if your harness limits foreground commands; lanes take minutes.
    - Each lane writes `lanes/<id>.receipt.json`, plus its stdout, stderr and last message.
    - A `dropout` receipt names the reason. Record it in `dropouts`, continue with the rest, and tell the user. Never fill its slot with another model silently.
-5. **Review every completed lane's diff yourself.** Revert anything outside the lane's own directory. Run the project's lint and type checks. Fix only mechanical breakage, and note the fix on the variant. If two lanes converged on the same direction, say so on both cards; convergence is a strong signal.
+   - **Isolation differs by CLI.** Codex and Grok lanes run in their CLIs' workspace sandboxes. Claude lanes may only edit files, with no shell. pi lanes lose the shell, but pi has no sandbox, so a pi lane could still write outside the project. Use pi lanes only on a machine and project you trust them with.
+   - **Outside changes.** The run compares git's view of changed files before and after. It writes every path changed outside all lanes' `owns` paths and the sprint directory to `lanes/outside-changes.json`. Lanes share one checkout, so such a change cannot be attributed to a lane, and it may be the user's own work. Never revert it. List it for the user and ask what to do.
+5. **Review every completed lane's work yourself:**
+   - read the files under its `owns` paths;
+   - run the project's lint and type checks;
+   - fix only mechanical breakage, and note the fix on the variant.
+
+   If two lanes converged on the same direction, say so on both cards; convergence is a strong signal.
 6. **Optionally, get second opinions.** If a `critic` is configured, or the variants are hard to call, send the brief plus each variant's screenshots to a model that did not build it. Store its two or three sentences in that variant's `reviews`.
 7. **Build the decision options yourself.** Express each one as a local override scoped to its preview, such as a data attribute with CSS custom-property overrides. Never edit shared components, tokens or global styles during a sprint.
 8. **Prove the previews stay out of production.** Run the production build and check that the preview pages and modules are absent.
@@ -104,8 +113,13 @@ Loop until a `submit` event arrives:
    - **`reprompt`:**
      1. Add `{ "feedbackId": <id>, "status": "working" }` to `requests` immediately.
      2. Route the request to a lane:
-        - `variant:<id>` goes back to the model that built that variant, so the variant keeps its voice. Add a lane with the next free letter, `basedOn` set to the source variant and `prompt` set to the user's text, and run it with `lanes.mjs run --only <id>`.
-        - `direction` ("none of these") goes to the roster model that has built the fewest variants.
+        - `variant:<id>` goes back to the model that built that variant, so the variant keeps its voice:
+          1. Pick the next free letter as the new id.
+          2. Write a complete prompt file `lanes/<new id>.prompt.md` from the lane template: the full brief plus the revision line quoting the user's text.
+          3. Add the lane to `lanes.json` with its `model`, `promptFile` and `owns`.
+          4. Run `node <skill-dir>/scripts/lanes.mjs run --sprint .design-sprint/<slug> --plan .design-sprint/<slug>/lanes.json --only <new id>`.
+          5. On the new variant in `sprint.json`, set `basedOn` to the source id and `prompt` to the user's text.
+        - `direction` ("none of these") becomes a new lane, built the same way, on the roster model that has built the fewest variants.
         - `decision:<id>` gets a new option, which you build yourself.
         - `sprint` is a general change, which you make yourself.
      3. Keep the earlier variants unless the user asked to replace one; then set `retired: true` on it.
