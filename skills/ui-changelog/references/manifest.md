@@ -9,7 +9,9 @@
 | `title` | `UI changelog` | Report heading. Include the refs, such as `feat/x vs development`. |
 | `before`, `after` | required | `{ "baseURL": "http://127.0.0.1:5301", "ref": "abc1234", "storageState": "/abs/state.json" }`. `ref` is a display label. `storageState` overrides the top-level one for that side. |
 | `shots` | required | Array of shots, captured in order. Report rows keep this order. |
-| `viewport` | `1280×800` | `{ "width", "height" }` in CSS pixels. |
+| `viewport` | `1280×800` | `{ "width", "height" }` in CSS pixels, plus `"mobile": true` to emulate a phone (mobile layout viewport and touch). |
+| `viewports` | none | Default viewport list for every shot without its own, such as `["desktop", "mobile"]`. Each shot becomes one pair per viewport. |
+| `viewportPresets` | built-ins | Extra or overridden named viewports. Built-ins: `mobile` 390×844 phone, `tablet` 768×1024 with touch, `desktop` 1280×800. |
 | `deviceScaleFactor` | `1` | Use `2` only when text crispness is the change. |
 | `colorScheme` | `light` | `light` or `dark`. |
 | `locale`, `timezoneId` | browser, `UTC` | Pin both so dates and number formats match on both sides. |
@@ -35,6 +37,7 @@
 | `id` | Unique, stable. File names derive from it, and `--only` selects by it. |
 | `label` | Breadcrumb plus state, such as `Event › Results tab, empty`. |
 | `path` | URL path and query, resolved against each side's `baseURL`. |
+| `viewports` | Names or `{ "name", "width", "height", "mobile" }` objects. The shot expands into `<id>-<name>` shots labeled with the size. `--only <id>` selects all of them. Ignored when the shot sets `viewport`. |
 | `selector` | Capture only this element. Omit for the viewport. |
 | `padding` | CSS pixels of context around `selector`. Use 8 to 24 so the reader sees where it sits. |
 | `fullPage` | Capture the whole scrollable page instead of the viewport. |

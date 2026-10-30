@@ -14,6 +14,12 @@ import { fileURLToPath } from 'node:url';
 
 const TOOL_HOME = process.env.UI_CHANGELOG_HOME ?? path.join(process.env.XDG_CACHE_HOME ?? path.join(os.homedir(), '.cache'), 'ui-changelog');
 const requireFromTool = createRequire(path.join(TOOL_HOME, 'package.json'));
+const VIEWPORT_PRESETS = {
+  mobile: { width: 390, height: 844, mobile: true },
+  tablet: { width: 768, height: 1024, hasTouch: true },
+  desktop: { width: 1280, height: 800 },
+};
+
 
 const [command, ...rest] = process.argv.slice(2);
 if (!command) fail('Usage: capture.mjs <manifest.json> --out <dir> | report --out <dir> | login <url> <state.json>');
@@ -42,9 +48,10 @@ async function captureAll(manifestPath, argv) {
   }
   if (!Array.isArray(manifest.shots)) fail('manifest.shots must be an array');
   manifest.dir = path.dirname(path.resolve(manifestPath));
+  manifest.shots = expandViewports(manifest);
   const outDir = path.resolve(flag(argv, '--out') ?? fail('--out <dir> is required'));
   const only = flag(argv, '--only')?.split(',');
-  const shots = manifest.shots.filter((shot) => !only || only.includes(shot.id));
+  const shots = manifest.shots.filter((shot) => !only || only.includes(shot.id) || only.includes(shot.group));
   for (const side of ['before', 'after']) if (!manifest[side]?.baseURL) fail(`manifest.${side}.baseURL is required`);
   assertUniqueIds(manifest.shots);
   for (const side of ['before', 'after']) {
@@ -89,12 +96,31 @@ async function captureAll(manifestPath, argv) {
   console.log(path.join(outDir, 'index.html'));
 }
 
+// A shot with `viewports` (or the manifest-level default) becomes one shot per viewport.
+function expandViewports(manifest) {
+  const presets = { ...VIEWPORT_PRESETS, ...manifest.viewportPresets };
+  return manifest.shots.flatMap((shot) => {
+    const list = shot.viewport ? [] : (shot.viewports ?? manifest.viewports ?? []);
+    if (!list.length) return [shot];
+    return list.map((entry) => {
+      const viewport = typeof entry === 'string' ? presets[entry] : entry;
+      const name = typeof entry === 'string' ? entry : (entry.name ?? `${entry.width}x${entry.height}`);
+      if (!viewport?.width || !viewport?.height) fail(`unknown viewport ${JSON.stringify(entry)} in shot ${shot.id}`);
+      const label = shot.label ?? shot.id;
+      return list.length === 1 ? { ...shot, viewport } : { ...shot, id: `${shot.id}-${name}`, label: `${label}, ${name} ${viewport.width}×${viewport.height}`, viewport, group: shot.id };
+    });
+  });
+}
+
 async function captureOne(browser, baseManifest, side, shot, file) {
   const manifest = { ...baseManifest, networkIdleTimeoutMs: shot.networkIdleTimeoutMs ?? baseManifest.networkIdleTimeoutMs };
   const timeout = manifest.timeoutMs ?? 10_000;
-  const viewport = shot.viewport ?? manifest.viewport ?? { width: 1280, height: 800 };
+  const viewport = shot.viewport ?? manifest.viewport ?? VIEWPORT_PRESETS.desktop;
+  const mobile = viewport.mobile ?? viewport.isMobile ?? false;
   const context = await browser.newContext({
-    viewport,
+    viewport: { width: viewport.width, height: viewport.height },
+    isMobile: mobile,
+    hasTouch: viewport.hasTouch ?? mobile,
     deviceScaleFactor: shot.deviceScaleFactor ?? manifest.deviceScaleFactor ?? 1,
     colorScheme: shot.colorScheme ?? manifest.colorScheme ?? 'light',
     locale: shot.locale ?? manifest.locale,
@@ -131,6 +157,10 @@ async function captureOne(browser, baseManifest, side, shot, file) {
     const url = new URL(shot.path ?? '/', side.baseURL).toString();
     await page.goto(url, { waitUntil: 'load', timeout: Math.max(timeout, 30_000) });
     await settle(page, manifest);
+    if (mobile) {
+      const layoutWidth = await page.evaluate(() => document.documentElement.clientWidth);
+      if (layoutWidth > viewport.width) console.error(`          warning: ${shot.id} laid out at ${layoutWidth}px on a ${viewport.width}px phone; the page has no width=device-width meta viewport`);
+    }
     for (const step of shot.steps ?? []) await runStep(page, step, manifest);
     if (shot.waitFor) await page.locator(shot.waitFor).first().waitFor({ state: 'visible', timeout });
     await settle(page, manifest);

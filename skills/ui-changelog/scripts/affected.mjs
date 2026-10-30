@@ -46,12 +46,16 @@ const files = walk(root);
 const resolver = createResolver(files);
 const importers = buildReverseGraph(files, resolver);
 
+const breakpoints = readBreakpoints(files);
+const classified = changed.map(classify);
 const report = {
   root,
   base,
   baseCommit: git(['rev-parse', base]).trim(),
   after: dirty() ? 'working tree (includes uncommitted changes)' : 'HEAD',
-  files: changed.map(classify),
+  breakpoints,
+  viewports: suggestViewports(classified),
+  files: classified,
 };
 
 if (scopes.length && report.files.every((file) => file.kind === 'out-of-scope')) {
@@ -89,7 +93,85 @@ function classify({ path: rel, status }) {
     result.entries = entries;
   }
   if (!entries.length && roots.length) result.roots = roots.slice(0, maxEntries);
+  const responsive = responsiveSignals(rel, status);
+  if (responsive) result.responsive = responsive;
   return result;
+}
+
+// Responsive signals in the changed lines ("change") or elsewhere in the file ("file").
+// A change-level signal means the change itself differs by viewport; a file-level one means the
+// change lands in a layout that does.
+function responsiveSignals(rel, status) {
+  let text;
+  try {
+    text = readFileSync(path.join(root, rel), 'utf8');
+  } catch {
+    return null;
+  }
+  const changedLines =
+    status === 'A'
+      ? text
+      : git(['diff', '-U0', '--no-color', base, '--', rel])
+          .split('\n')
+          .filter((line) => /^[+-](?![+-]{2})/.test(line))
+          .map((line) => line.slice(1))
+          .join('\n');
+  const inChange = scanResponsive(changedLines);
+  const inFile = scanResponsive(text);
+  if (!inFile.length) return null;
+  return { level: inChange.length ? 'change' : 'file', signals: inChange.length ? inChange : inFile };
+}
+
+function scanResponsive(text) {
+  const names = Object.keys(breakpoints).sort((a, b) => b.length - a.length).map((name) => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+  const found = new Set();
+  const variant = new RegExp(`(?<![\\w/-])(max-|min-)?(${names.join('|')}):(?=[\\w!\\[-])`, 'g');
+  for (const match of text.matchAll(variant)) found.add(`${match[1] ?? ''}${match[2]}:`);
+  for (const match of text.matchAll(/@(?:media|container)[^{]*?\(\s*(min|max)-width\s*:\s*([\d.]+)(px|rem|em)\s*\)/g)) {
+    found.add(`${match[1]}-width: ${match[2]}${match[3]}`);
+  }
+  for (const match of text.matchAll(/\b(matchMedia|useMediaQuery|innerWidth|use\w*(?:Window|Media|Breakpoint|Viewport|Screen)\w*)\b/g)) found.add(match[1]);
+  return [...found];
+}
+
+// Tailwind defaults, overridden by `--breakpoint-*` theme variables (v4) or `screens` (v3 config).
+function readBreakpoints(allFiles) {
+  const result = { sm: 640, md: 768, lg: 1024, xl: 1280, '2xl': 1536 };
+  const toPx = (value, unit) => Math.round(Number(value) * (unit === 'px' ? 1 : 16));
+  for (const file of allFiles) {
+    if (!/\.(css|scss|pcss)$/.test(file) && !/tailwind\.config\.[cm]?[jt]s$/.test(file)) continue;
+    let text;
+    try {
+      text = readFileSync(path.join(root, file), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const match of text.matchAll(/--breakpoint-([\w-]+)\s*:\s*([\d.]+)(px|rem|em)/g)) result[match[1]] = toPx(match[2], match[3]);
+    const screens = text.match(/screens\s*:\s*\{([^}]*)\}/);
+    if (screens) for (const match of screens[1].matchAll(/['"]?([\w-]+)['"]?\s*:\s*['"]([\d.]+)(px|rem|em)['"]/g)) result[match[1]] = toPx(match[2], match[3]);
+  }
+  return result;
+}
+
+// One viewport below the smallest breakpoint involved, one at each breakpoint, and desktop.
+function suggestViewports(rows) {
+  const responsive = rows.filter((row) => row.responsive);
+  if (!responsive.length) return [];
+  const widths = new Map([[390, { name: 'mobile', width: 390, height: 844, mobile: true }], [1280, { name: 'desktop', width: 1280, height: 800 }]]);
+  for (const row of responsive.filter((candidate) => candidate.responsive.level === 'change')) {
+    for (const signal of row.responsive.signals) {
+      const tailwind = signal.match(/^(max-|min-)?([\w-]+):$/);
+      const media = signal.match(/^(min|max)-width: ([\d.]+)(px|rem|em)$/);
+      const width = tailwind ? breakpoints[tailwind[2]] : media ? Math.round(Number(media[2]) * (media[3] === 'px' ? 1 : 16)) : null;
+      if (!width || widths.has(width)) continue;
+      const name = tailwind ? tailwind[2] : `w${width}`;
+      widths.set(width, { name, width, height: width < 1024 ? 1024 : 800 });
+    }
+  }
+  return [...widths.values()].sort((a, b) => a.width - b.width).map((viewport) => ({
+    ...viewport,
+    required: responsive.some((row) => row.responsive.level === 'change') || viewport.name === 'desktop',
+  }));
 }
 
 // BFS up the reverse import graph, stopping at entry files; records one shortest chain per entry.
@@ -323,8 +405,15 @@ function parseArgs(argv) {
   return out;
 }
 
-function printMarkdown({ base, baseCommit, after, files: rows }) {
+function printMarkdown({ base, baseCommit, after, viewports, files: rows }) {
   const lines = [`Base: ${base} (${baseCommit.slice(0, 10)}). After: ${after}.`, ''];
+  const responsive = rows.filter((row) => row.responsive);
+  if (responsive.length) {
+    const change = responsive.filter((row) => row.responsive.level === 'change');
+    lines.push(change.length ? '## Responsive (the change differs by viewport; capture every viewport below)' : '## Responsive (the change sits in a responsive layout; capture mobile too)');
+    for (const row of responsive) lines.push(`- \`${row.path}\` (${row.responsive.level === 'change' ? 'in the changed lines' : 'elsewhere in the file'}): ${row.responsive.signals.slice(0, 8).map((signal) => `\`${signal}\``).join(', ')}`);
+    lines.push(`- Viewports: ${viewports.map((viewport) => `${viewport.name} ${viewport.width}×${viewport.height}`).join(', ')}`, '');
+  }
   const groups = { scoped: [], shell: [], global: [], unreached: [], skipped: [] };
   for (const row of rows) (groups[row.scope] ?? groups.skipped).push(row);
   if (groups.scoped.length) {

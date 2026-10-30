@@ -4,7 +4,7 @@ Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`,
 
 | Skill | Description |
 | --- | --- |
-| [`ui-changelog`](skills/ui-changelog/SKILL.md) | Visual changelog for frontend work. Maps the git diff to the pages and states it touches, captures before/after screenshots of the real app at both refs, circles what is new or modified, and writes an HTML report plus PR-ready Markdown. It can mock API responses, so screens show realistic data when no safe backend is available. |
+| [`ui-changelog`](skills/ui-changelog/SKILL.md) | Visual changelog for frontend work. Maps the git diff to the pages and states it touches, captures before/after screenshots of the real app at both refs, at every viewport the change affects, circles what is new or modified, and writes an HTML report plus PR-ready Markdown. It can mock API responses, so screens show realistic data when no safe backend is available. |
 
 ## Install
 
@@ -19,7 +19,7 @@ The installer symlinks each skill into `~/.claude/skills`, `~/.codex/skills`, `~
 
 Ask the agent for "a UI changelog of my changes" or "before/after screenshots for this branch". The agent then:
 
-1. Runs `scripts/affected.mjs` to map changed files to the pages, routes and layouts that render them.
+1. Runs `scripts/affected.mjs` to map changed files to the pages, routes and layouts that render them, and to flag responsive code (breakpoint variants, `@media` queries, viewport hooks) with the viewports to capture.
 2. Serves the base ref from a git worktree and your changes from the checkout, on two free ports.
 3. Writes a capture manifest with the locations and states to capture, and any API mocks.
 4. Runs `scripts/capture.mjs`, which captures each pair with Playwright under identical settings, compares them, and writes the report.

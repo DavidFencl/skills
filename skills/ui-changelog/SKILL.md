@@ -48,7 +48,9 @@ Handle each group like this:
 - **Global.** Locale files, tokens, theme files and barrels reach most of the app. Read the diff hunks for the exact keys, tokens or exports that changed, grep for their consumers, and capture those screens. Never screenshot every page.
 - **Unreached.** Read the file. It may be loaded dynamically, use an undetected convention (rerun with `--entry`), or not be UI at all.
 
-The import graph says where a change renders. The hunks say which state shows it. For each location, list the states the change affects: default, hover or focus, open menu, dialog or drawer, empty, loading, error, validation, the mobile breakpoint when responsive code changed, dark theme when theme code changed, and a long-text locale when copy changed. Each location and state pair becomes one shot. Mark a shot of UI that does not exist on the base with `"new": true`, and UI the change deletes with `"removed": true`. Any other shot that fails on one side is reported as failed, so a broken selector cannot pass as new UI.
+The output starts with a **Responsive** section when changed files use breakpoint variants (`md:`, `max-lg:`, custom Tailwind breakpoints), `@media` width queries or viewport hooks. A signal in the changed lines means the change itself differs by viewport, so capture every suggested viewport. A signal elsewhere in the file means the change lands in a responsive layout, so capture mobile and desktop. Put the suggestions in each affected shot's `viewports`: `mobile` and `desktop` by name, and the others as the `{ name, width, height }` objects the JSON output lists.
+
+The import graph says where a change renders. The hunks say which state shows it. For each location, list the states the change affects: default, hover or focus, open menu, dialog or drawer, empty, loading, error, validation, dark theme when theme code changed, and a long-text locale when copy changed. Viewports multiply these states rather than counting as one of them. Each location and state pair becomes one shot. Mark a shot of UI that does not exist on the base with `"new": true`, and UI the change deletes with `"removed": true`. Any other shot that fails on one side is reported as failed, so a broken selector cannot pass as new UI.
 
 Add one control shot the diff should not affect. When the app shell changed, the control is an element outside the shell, such as the page's `main`, with no `padding` that reaches into the shell.
 
@@ -73,14 +75,14 @@ Add one control shot the diff should not affect. When the app shell changed, the
   "title": "feat/report-button vs development",
   "before": { "baseURL": "http://127.0.0.1:5301", "ref": "development 6db915d" },
   "after": { "baseURL": "http://127.0.0.1:5302", "ref": "working tree" },
-  "viewport": { "width": 1280, "height": 800 },
+  "viewports": ["desktop", "mobile"],
   "fixedTime": "2026-01-15T10:00:00Z",
   "mask": ["[data-testid=clock]"],
   "waitForHidden": [".spinner"],
   "shots": [
     { "id": "footer", "label": "Home › footer", "path": "/", "selector": "footer", "padding": 16, "sources": ["src/components/layout/footer.tsx"] },
     { "id": "report-dialog", "label": "Home › footer › Report a problem, open", "path": "/", "new": true, "steps": [{ "click": "role=button[name=\"Report a problem\"]" }], "selector": "role=dialog", "padding": 16 },
-    { "id": "error-mobile", "label": "Route error page, mobile", "path": "/does-not-exist", "viewport": { "width": 390, "height": 844 } },
+    { "id": "error-page", "label": "Route error page", "path": "/does-not-exist", "viewports": ["desktop", "mobile", { "name": "md", "width": 768, "height": 1024 }] },
     { "id": "about-control", "label": "About (control)", "path": "/about", "note": "Not in the diff. Expected unchanged." }
   ]
 }
