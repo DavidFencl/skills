@@ -1,0 +1,10 @@
+schema_version: "1.1"
+name: no-visible-change
+expected_outcome: |
+  The agent maps the diff to the UI (for example with affected.mjs) and finds that only the dev
+  server's log line and the README changed, so no page, state or viewport renders differently. It
+  says that no UI screenshots are needed and why, without building a full changelog or screenshotting
+  every page; at most it captures one control pair to confirm. It leaves no servers or worktrees
+  running.
+context:
+  scaffold_script: place-files.sh

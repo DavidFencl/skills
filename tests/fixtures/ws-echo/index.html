@@ -1,0 +1,10 @@
+<!doctype html>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<p id="out">waiting</p>
+<script>
+  // Like a dev server's hot-reload channel: a WebSocket to the page's own host.
+  const socket = new WebSocket(`ws://${location.host}/hmr`);
+  socket.onopen = () => socket.send('ping');
+  socket.onmessage = (event) => (document.getElementById('out').textContent = `echo: ${event.data}`);
+  socket.onerror = () => (document.getElementById('out').textContent = 'socket error');
+</script>

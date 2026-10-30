@@ -1,0 +1,11 @@
+schema_version: "1.1"
+name: committed-branch-mobile-menu
+expected_outcome: |
+  The before side is the merge-base of feature/mobile-menu and main (the main commit), served from a
+  git worktree, and the after side is the checked-out branch. The header is captured at a phone
+  viewport, where the pair is changed and the new Menu button is circled, and at desktop size, where
+  the pair is unchanged. Optionally the open menu is captured as a new state. No request reaches the
+  real API, the pages show mocked data, and the report names both refs. The agent stops its servers
+  and removes the worktree.
+context:
+  scaffold_script: place-files.sh

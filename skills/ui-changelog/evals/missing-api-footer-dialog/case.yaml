@@ -1,0 +1,14 @@
+schema_version: "1.1"
+name: missing-api-footer-dialog
+expected_outcome: |
+  A ui-changelog report directory (index.html, report.md, results.json, shots/) compares HEAD with the
+  working tree. Both dev servers point at a loopback API address and allowHosts blocks other hosts, so
+  nothing reaches the real API. The pages show mocked, realistic data (event cards, club stats, the
+  signed-in member) instead of error messages. The footer pair is changed with the new "Report a
+  problem" button circled, the open dialog is reported as new, the event cards are captured at a phone
+  viewport and reported as changed there, and the build version string in the footer, which differs
+  between the two checkouts, is hidden rather than reported as a change. The agent stops the servers
+  it started, removes the before worktree, leaves the fixture's source untouched, and hands over the
+  path to index.html with a short summary.
+context:
+  scaffold_script: place-files.sh

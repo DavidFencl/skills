@@ -1,0 +1,8 @@
+{
+  "name": "riverside-run-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node server.mjs --port 5173"
+  }
+}
