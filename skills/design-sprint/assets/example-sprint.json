@@ -1,0 +1,41 @@
+{
+	"title": "Organizer applications list",
+	"goal": "Organizers review and accept entries quickly; decide the list's structure and two styling questions.",
+	"round": 1,
+	"viewports": [390, 1280],
+	"themes": ["dark", "light"],
+	"current": { "image": "current.png", "note": "Today's applications table." },
+	"variants": [
+		{
+			"id": "A",
+			"label": "Flat rows",
+			"url": "http://127.0.0.1:5199/design-sprint.html?variant=a&theme={theme}",
+			"intent": "One dense table with a compact title row and quiet row actions.",
+			"tradeoffs": "Fastest to scan; needs horizontal scroll on phones.",
+			"recommended": true,
+			"round": 1
+		},
+		{
+			"id": "B",
+			"label": "Sectioned",
+			"url": "http://127.0.0.1:5199/design-sprint.html?variant=b&theme={theme}",
+			"intent": "Applications grouped by category in plain panels with counts.",
+			"tradeoffs": "Easier per-category work; longer page.",
+			"round": 1
+		}
+	],
+	"decisions": [
+		{
+			"id": "1",
+			"question": "Where may orange appear?",
+			"why": "Orange text fails contrast in the light theme.",
+			"recommendation": "1a",
+			"current": { "note": "Today orange fills secondary buttons and some page titles." },
+			"options": [
+				{ "id": "1a", "label": "Emphasis only", "url": "http://127.0.0.1:5199/design-sprint.html?decision=1a&theme={theme}", "recommended": true },
+				{ "id": "1b", "label": "Also secondary buttons", "url": "http://127.0.0.1:5199/design-sprint.html?decision=1b&theme={theme}" }
+			]
+		}
+	],
+	"requests": []
+}
