@@ -9,18 +9,12 @@
 #   Grok         ${GROK_HOME:-~/.grok}/skills/
 #
 # A harness is skipped when its config directory does not exist. Safe to re-run. A destination
-# that already exists as a real directory (not a symlink) is left untouched.
+# that already exists as a real directory (not a symlink) is left untouched. Runs on bash 3.2
+# (macOS) and later.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-
-declare -A HARNESSES=(
-  ["Claude Code"]="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
-  ["Codex"]="${CODEX_HOME:-$HOME/.codex}"
-  ["pi"]="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
-  ["Grok"]="${GROK_HOME:-$HOME/.grok}"
-)
 
 install_link() {
   local target="$1"
@@ -35,14 +29,33 @@ install_link() {
   echo "  ✓  ${link} → ${target}"
 }
 
-for harness in "${!HARNESSES[@]}"; do
-  root="${HARNESSES[$harness]}"
-  skills_dir="$root/skills"
+# Plain functions instead of associative arrays, so the script runs on macOS's bash 3.2.
+harness_name() {
+  case "$1" in
+    claude) echo "Claude Code" ;;
+    codex) echo "Codex" ;;
+    pi) echo "pi" ;;
+    grok) echo "Grok" ;;
+  esac
+}
+# Each harness's own override variable wins over its default directory.
+harness_root() {
+  case "$1" in
+    claude) echo "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}" ;;
+    codex) echo "${CODEX_HOME:-${HOME}/.codex}" ;;
+    pi) echo "${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}" ;;
+    grok) echo "${GROK_HOME:-${HOME}/.grok}" ;;
+  esac
+}
+
+for harness in claude codex pi grok; do
+  root="$(harness_root "$harness")"
+  skills_dir="${root}/skills"
   if [ ! -d "$root" ]; then
-    echo "${harness}: not installed (${root} missing), skipped"
+    echo "$(harness_name "$harness"): not installed (${root} missing), skipped"
     continue
   fi
-  echo "${harness} → ${skills_dir}"
+  echo "$(harness_name "$harness") → ${skills_dir}"
   mkdir -p "$skills_dir"
   for skill_dir in "$SCRIPT_DIR"/skills/*/; do
     [ -e "${skill_dir}SKILL.md" ] || continue

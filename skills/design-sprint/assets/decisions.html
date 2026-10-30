@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Design sprint</title>
+<style>
+	:root {
+		color-scheme: light dark;
+		--bg: #f6f7f8; --panel: #ffffff; --line: #d9dde1; --ink: #16191d; --muted: #5b636c;
+		--accent: #0f6b62; --accent-ink: #ffffff; --warn: #8a4b00; --radius: 6px;
+		font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+	}
+	@media (prefers-color-scheme: dark) {
+		:root { --bg: #111417; --panel: #1a1f23; --line: #2e353b; --ink: #e8ecef; --muted: #9aa4ad; --accent: #3fb8a9; --accent-ink: #0b1513; --warn: #f0b35a; }
+	}
+	* { box-sizing: border-box; }
+	body { margin: 0; background: var(--bg); color: var(--ink); }
+	header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 20px; display: grid; gap: 8px; }
+	main { padding: 20px; display: grid; gap: 28px; max-width: 1600px; margin: 0 auto; }
+	h1 { font-size: 18px; margin: 0; }
+	h2 { font-size: 16px; margin: 0 0 4px; }
+	h3 { font-size: 15px; margin: 0; }
+	p { margin: 0; }
+	.muted { color: var(--muted); }
+	.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+	.spacer { flex: 1; }
+	button, select, textarea { font: inherit; color: inherit; }
+	button { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 5px 10px; cursor: pointer; }
+	button:hover { border-color: var(--muted); }
+	button.primary, button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+	button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	select, textarea { border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius); padding: 5px 8px; }
+	textarea { width: 100%; min-height: 56px; resize: vertical; }
+	.answer { font-family: ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 8px; min-width: 16ch; }
+	.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 10px; align-content: start; }
+	.card.picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+	.tag { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
+	.tag.rec { border-color: var(--accent); color: var(--accent); }
+	.preview { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
+	.preview iframe { border: 0; transform-origin: 0 0; position: absolute; top: 0; left: 0; background: transparent; }
+	.preview img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
+	.preview .empty { display: grid; place-items: center; height: 100%; padding: 16px; text-align: center; color: var(--muted); }
+	.decision { display: grid; gap: 10px; }
+	details summary { cursor: pointer; color: var(--muted); }
+	.status { font-size: 13px; }
+	.status.working { color: var(--warn); }
+	.history li { margin: 4px 0; }
+	.notice { border: 1px solid var(--warn); color: var(--warn); border-radius: var(--radius); padding: 8px 12px; }
+</style>
+</head>
+<body>
+<header>
+	<div class="row">
+		<h1 id="title">Design sprint</h1>
+		<span class="tag" id="round"></span>
+		<span class="spacer"></span>
+		<div class="row" role="group" aria-labelledby="width-label"><span id="width-label">Width</span><span class="row" id="viewports"></span></div>
+		<label class="row" id="theme-wrap" hidden>Theme <select id="theme"></select></label>
+	</div>
+	<p class="muted" id="goal"></p>
+	<div class="row">
+		<strong>Your answer</strong>
+		<output class="answer" id="answer" aria-live="polite">nothing picked</output>
+		<button type="button" id="copy">Copy answer</button>
+		<button type="button" class="primary" id="submit">Submit answer</button>
+		<span class="status" id="send-status" role="status"></span>
+	</div>
+</header>
+<main>
+	<div class="notice" id="offline" hidden>The feedback server is not reachable. Picks still work here; use “Copy answer” and paste it to the agent.</div>
+	<section aria-labelledby="variants-title">
+		<h2 id="variants-title">Variants</h2>
+		<p class="muted">Pick a direction, ask for changes to any variant, or keep the current screen.</p>
+		<div class="grid" id="variants"></div>
+		<div class="card" style="margin-top:16px">
+			<h3>None of these?</h3>
+			<label for="reprompt-direction" class="muted">Describe the direction you want instead. The agent adds it as a new variant.</label>
+			<textarea id="reprompt-direction" data-draft="direction"></textarea>
+			<div class="row"><button type="button" data-reprompt="direction" data-source="reprompt-direction">Send to agent</button></div>
+		</div>
+	</section>
+	<section aria-labelledby="decisions-title" id="decisions-section">
+		<h2 id="decisions-title">Decisions</h2>
+		<p class="muted">Each option changes one thing. “Do nothing” keeps today’s behaviour.</p>
+		<div class="decision" id="decisions"></div>
+	</section>
+	<section aria-labelledby="notes-title">
+		<h2 id="notes-title">Anything else</h2>
+		<label for="notes" class="muted">A note sent with your submitted answer, or a general request.</label>
+		<textarea id="notes" data-draft="notes"></textarea>
+		<div class="row" style="margin-top:8px"><button type="button" data-reprompt="sprint" data-source="notes">Send as request</button></div>
+	</section>
+	<section aria-labelledby="history-title">
+		<h2 id="history-title">Requests</h2>
+		<ul class="history" id="history"><li class="muted">No requests yet.</li></ul>
+	</section>
+</main>
+<script>
+const state = { sprint: null, signature: '', feedback: [], viewport: 1280, theme: null, online: true, filesOrigin: null };
+const KEEP = 'keep';
+const $ = (id) => document.getElementById(id);
+const el = (tag, props = {}, children = []) => {
+	const node = Object.assign(document.createElement(tag), props);
+	for (const child of [].concat(children)) if (child != null) node.append(child);
+	return node;
+};
+const storageKey = () => `design-sprint:${location.host}:${state.sprint?.title ?? ''}`;
+const loadPicks = () => { try { return JSON.parse(localStorage.getItem(storageKey())) ?? {}; } catch { return {}; } };
+let picks = {};
+const drafts = {};
+
+function savePicks() { localStorage.setItem(storageKey(), JSON.stringify(picks)); renderAnswer(); }
+
+// "Do nothing" is always available: the manifest's own keep option wins, otherwise one is added.
+function withKeep(options, keepLabel, current) {
+	if (options.some((option) => option.keep)) return options;
+	return [...options, { id: KEEP, keep: true, label: keepLabel, note: current?.note ?? 'No change: keep what exists today.', url: current?.url, image: current?.image }];
+}
+const optionId = (decision, option) => (option.keep ? `${decision.id}-keep` : option.id);
+
+// Picks of retired variants or removed options are dropped, so the answer only names what is on the page.
+function activeChoices() {
+	const choices = new Map();
+	const variants = withKeep((state.sprint?.variants ?? []).filter((variant) => !variant.retired), '', state.sprint?.current);
+	choices.set('direction', new Set(variants.map((variant) => (variant.keep ? KEEP : variant.id))));
+	for (const decision of state.sprint?.decisions ?? []) {
+		choices.set(`decision:${decision.id}`, new Set(withKeep(decision.options ?? [], '', decision.current).map((option) => optionId(decision, option))));
+	}
+	return choices;
+}
+function reconcilePicks() {
+	const choices = activeChoices();
+	let changed = false;
+	for (const [target, value] of Object.entries(picks)) {
+		if (!choices.get(target)?.has(value)) { delete picks[target]; changed = true; }
+	}
+	if (changed) localStorage.setItem(storageKey(), JSON.stringify(picks));
+}
+
+function answerText() {
+	reconcilePicks();
+	const parts = [];
+	const direction = picks.direction;
+	if (direction) parts.push(direction === KEEP ? 'Direction: keep current' : `Direction ${direction}`);
+	for (const decision of state.sprint?.decisions ?? []) {
+		const pick = picks[`decision:${decision.id}`];
+		if (pick) parts.push(pick.endsWith('-keep') ? `${decision.id}: keep` : pick);
+	}
+	return parts.join(', ');
+}
+function renderAnswer() { $('answer').textContent = answerText() || 'nothing picked'; }
+
+// Blind sprints hide which model made each variant until the user submits.
+const submitted = () => state.feedback.some((event) => event.type === 'submit');
+const modelLabel = (model) => (state.sprint.blind && !submitted() ? 'model hidden' : model);
+
+function fill(template) {
+	return template.replaceAll('{theme}', encodeURIComponent(state.theme ?? '')).replaceAll('{width}', String(state.viewport));
+}
+// Previews may only load http(s) URLs; anything else (javascript:, data:, file:) is refused. A path without
+// a scheme names a file in the sprint directory, served from the separate preview origin.
+function safeUrl(raw) {
+	try {
+		const filled = fill(raw);
+		const isSprintFile = !/^[a-z][a-z0-9+.-]*:/i.test(filled) && !filled.startsWith('//');
+		if (isSprintFile && !state.filesOrigin) return null;
+		const url = isSprintFile ? new URL(`/files/${filled.replace(/^\/?(files\/)?/, '')}`, state.filesOrigin) : new URL(filled);
+		return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+	} catch {
+		return null;
+	}
+}
+function previewFor(item, height) {
+	const box = el('div', { className: 'preview' });
+	box.style.height = `${item.height ?? height}px`;
+	const url = item.url ? safeUrl(item.url) : null;
+	if (url) {
+		const frame = el('iframe', { title: item.label ?? 'preview', loading: 'lazy' });
+		// Previews never share this page's origin; one that does anyway gets an opaque origin.
+		frame.setAttribute('sandbox', url.origin === location.origin ? 'allow-scripts allow-forms' : 'allow-scripts allow-forms allow-same-origin');
+		frame.src = url.href;
+		box.append(frame);
+		const fit = () => {
+			const scale = Math.min(1, box.clientWidth / state.viewport);
+			frame.style.width = `${state.viewport}px`;
+			frame.style.height = `${box.clientHeight / scale}px`;
+			frame.style.transform = `scale(${scale})`;
+		};
+		new ResizeObserver(fit).observe(box);
+	} else if (item.image && safeUrl(item.image)) {
+		box.append(el('img', { src: safeUrl(item.image).href, alt: item.label ?? 'preview' }));
+	} else {
+		const refused = (item.url || item.image) && !url;
+		box.append(el('div', { className: 'empty', textContent: refused ? 'Preview URL refused: only http(s) and relative URLs load.' : item.keep ? 'Keep today’s version' : 'No preview' }));
+	}
+	return box;
+}
+function keyed(node, key) { node.dataset.key = key; return node; }
+function draftArea(key, label) {
+	const id = `draft-${key.replace(/[^a-z0-9-]/gi, '_')}`;
+	const area = el('textarea', { id, value: drafts[key] ?? '' });
+	area.dataset.draft = key;
+	return [el('label', { htmlFor: id, className: 'muted', textContent: label }), area,
+		el('div', { className: 'row' }, el('button', { type: 'button', textContent: 'Send to agent', onclick: () => sendReprompt(key, area) }))];
+}
+function pickButton(target, value, label) {
+	const button = el('button', { type: 'button', onclick: () => { picks[target] = value; savePicks(); post({ type: 'pick', target, option: value }); refreshPicks(); } });
+	Object.assign(button.dataset, { pickTarget: target, pickValue: value, pickLabel: label });
+	return button;
+}
+// Picks only restyle buttons and cards, so previews do not reload.
+function refreshPicks() {
+	for (const button of document.querySelectorAll('button[data-pick-target]')) {
+		const pressed = picks[button.dataset.pickTarget] === button.dataset.pickValue;
+		button.ariaPressed = String(pressed);
+		button.textContent = `${pressed ? 'Picked' : 'Pick'} ${button.dataset.pickLabel}`;
+		button.closest('.card')?.classList.toggle('picked', pressed);
+	}
+}
+
+function renderVariants() {
+	const sprint = state.sprint;
+	const variants = withKeep((sprint.variants ?? []).filter((variant) => !variant.retired), 'Do nothing — keep the current screen', sprint.current);
+	$('variants').replaceChildren(...variants.map((variant) => {
+		const value = variant.keep ? KEEP : variant.id;
+		const head = el('div', { className: 'row' }, [
+			el('h3', { textContent: variant.keep ? variant.label : `${variant.id} · ${variant.label}` }),
+			variant.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
+			variant.round ? el('span', { className: 'tag', textContent: `Round ${variant.round}` }) : null,
+			variant.model ? el('span', { className: 'tag', textContent: modelLabel(variant.model) }) : null,
+			el('span', { className: 'spacer' }),
+			variant.url && safeUrl(variant.url) ? el('a', { href: safeUrl(variant.url).href, target: '_blank', rel: 'noopener noreferrer', textContent: 'Open' }) : null,
+			pickButton('direction', value, variant.keep ? 'keep' : variant.id),
+		]);
+		const card = el('article', { className: 'card' }, [head, previewFor(variant, 560)]);
+		if (variant.prompt) card.append(el('p', { className: 'muted', textContent: `From your request: “${variant.prompt}”` }));
+		for (const [label, text] of [['Intent', variant.intent], ['Trade-offs', variant.tradeoffs], ['', variant.note && !variant.keep ? variant.note : null]]) {
+			if (text) card.append(el('p', {}, [label ? el('strong', { textContent: `${label}: ` }) : null, text]));
+		}
+		for (const review of variant.reviews ?? []) {
+			card.append(el('p', { className: 'muted' }, [el('strong', { textContent: `Second opinion (${modelLabel(review.model)}): ` }), review.text]));
+		}
+		if (variant.keep && variant.note) card.append(el('p', { className: 'muted', textContent: variant.note }));
+		if (!variant.keep) card.append(keyed(el('details', {}, [el('summary', { textContent: `Change variant ${variant.id}` }), ...draftArea(`variant:${variant.id}`, `What should change in ${variant.id}?`)]), `variant:${variant.id}`));
+		return card;
+	}));
+}
+
+function renderDecisions() {
+	const decisions = state.sprint.decisions ?? [];
+	$('decisions-section').hidden = decisions.length === 0;
+	$('decisions').replaceChildren(...decisions.map((decision) => {
+		const target = `decision:${decision.id}`;
+		const options = withKeep(decision.options ?? [], 'Do nothing — keep today’s behaviour', decision.current);
+		return el('section', { className: 'card' }, [
+			el('h3', { textContent: `${decision.id} · ${decision.question}` }),
+			decision.why ? el('p', { className: 'muted', textContent: decision.why }) : null,
+			decision.recommendation ? el('p', {}, [el('strong', { textContent: 'Recommended: ' }), decision.recommendation]) : null,
+			el('div', { className: 'grid' }, options.map((option) => {
+				const value = optionId(decision, option);
+				return el('div', { className: 'card' }, [
+					el('div', { className: 'row' }, [
+						el('strong', { textContent: option.keep ? option.label : `${option.id} · ${option.label}` }),
+						option.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
+						el('span', { className: 'spacer' }),
+						pickButton(target, value, option.keep ? 'keep' : option.id),
+					]),
+					previewFor(option, 300),
+					option.note ? el('p', { className: 'muted', textContent: option.note }) : null,
+				]);
+			})),
+			keyed(el('details', {}, [el('summary', { textContent: 'None of these fit' }), ...draftArea(target, `What would you want for “${decision.question}”?`)]), target),
+		]);
+	}));
+}
+
+function renderHistory() {
+	const requests = new Map((state.sprint?.requests ?? []).map((request) => [request.feedbackId, request]));
+	const items = state.feedback.filter((event) => event.type !== 'pick');
+	if (!items.length) return $('history').replaceChildren(el('li', { className: 'muted', textContent: 'No requests yet.' }));
+	$('history').replaceChildren(...items.reverse().map((event) => {
+		const request = requests.get(event.id);
+		const status = request?.status ?? 'sent';
+		return el('li', {}, [
+			el('span', { className: `status ${status === 'working' ? 'working' : ''}`, textContent: `[${status}] ` }),
+			el('strong', { textContent: event.type === 'submit' ? 'Submitted' : `Re-prompt (${event.target})` }),
+			`: ${event.text ?? ''}`,
+			request?.note ? el('span', { className: 'muted', textContent: ` — ${request.note}` }) : null,
+		]);
+	}));
+}
+
+function renderControls() {
+	const sprint = state.sprint;
+	document.title = `${sprint.title ?? 'Design sprint'} · design sprint`;
+	$('title').textContent = sprint.title ?? 'Design sprint';
+	$('goal').textContent = sprint.goal ?? '';
+	$('round').textContent = `Round ${sprint.round ?? 1}`;
+	const viewports = sprint.viewports ?? [390, 1280];
+	if (!viewports.includes(state.viewport)) state.viewport = viewports.at(-1);
+	$('viewports').replaceChildren(...viewports.map((width) => el('button', { type: 'button', textContent: `${width}px`, ariaPressed: String(width === state.viewport),
+		onclick: () => { state.viewport = width; render(true); } })));
+	const themes = sprint.themes ?? [];
+	$('theme-wrap').hidden = themes.length === 0;
+	if (themes.length && !themes.includes(state.theme)) state.theme = themes[0];
+	$('theme').replaceChildren(...themes.map((theme) => el('option', { value: theme, textContent: theme, selected: theme === state.theme })));
+}
+
+function render(force = false) {
+	if (!state.sprint) return;
+	const signature = JSON.stringify([state.sprint, state.viewport, state.theme, submitted()]);
+	if (force || signature !== state.signature) {
+		state.signature = signature;
+		const open = new Set([...document.querySelectorAll('details[open]')].map((details) => details.dataset.key));
+		const focused = document.activeElement?.dataset?.draft;
+		const selection = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
+		renderControls();
+		renderVariants();
+		renderDecisions();
+		for (const details of document.querySelectorAll('details[data-key]')) details.open = open.has(details.dataset.key);
+		const area = focused && document.querySelector(`textarea[data-draft="${CSS.escape(focused)}"]`);
+		if (area) { area.focus(); area.setSelectionRange(...selection); }
+	}
+	refreshPicks();
+	renderHistory();
+	renderAnswer();
+}
+
+async function post(event) {
+	try {
+		const response = await fetch('/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(event) });
+		if (!response.ok) throw new Error((await response.json()).error);
+		const record = await response.json();
+		state.feedback.push(record);
+		renderHistory();
+		return record;
+	} catch (error) {
+		$('send-status').textContent = `Not sent: ${error.message}. Use Copy answer.`;
+		return null;
+	}
+}
+async function sendReprompt(target, area) {
+	const text = area.value.trim();
+	if (!text) { area.focus(); return; }
+	const record = await post({ type: 'reprompt', target, text });
+	if (record) { area.value = ''; delete drafts[target]; $('send-status').textContent = 'Sent. The agent will add or update a variant.'; }
+}
+
+document.addEventListener('input', (event) => { const key = event.target.dataset?.draft; if (key) drafts[key] = event.target.value; });
+document.addEventListener('click', (event) => {
+	const button = event.target.closest('[data-reprompt]');
+	if (button) sendReprompt(button.dataset.reprompt, $(button.dataset.source));
+});
+$('theme').addEventListener('change', (event) => { state.theme = event.target.value; render(true); });
+$('copy').addEventListener('click', async () => {
+	const text = [answerText(), $('notes').value.trim()].filter(Boolean).join('\nNote: ');
+	await navigator.clipboard.writeText(text);
+	$('send-status').textContent = 'Copied.';
+});
+$('submit').addEventListener('click', async () => {
+	const answer = answerText();
+	if (!answer) { $('send-status').textContent = 'Pick at least one option, or pick “Do nothing”.'; return; }
+	const record = await post({ type: 'submit', text: answer, option: $('notes').value.trim() || undefined });
+	if (record) { $('send-status').textContent = 'Submitted. The agent will apply your picks.'; render(true); }
+});
+
+async function poll() {
+	try {
+		const [sprint, feedback] = await Promise.all([fetch('/api/sprint').then((r) => r.ok ? r.json() : Promise.reject(new Error('no sprint'))), fetch('/api/feedback').then((r) => r.json())]);
+		const first = !state.sprint;
+		if (first) state.filesOrigin = (await fetch('/api/config').then((r) => r.json())).filesOrigin;
+		state.sprint = sprint;
+		state.feedback = feedback;
+		if (first) picks = loadPicks();
+		$('offline').hidden = true;
+		render();
+	} catch {
+		$('offline').hidden = false;
+	}
+}
+poll();
+setInterval(poll, 2000);
+</script>
+</body>
+</html>
