@@ -1,8 +1,10 @@
 # Skills
 
-A personal collection of [pi](https://github.com/earendil-works/pi-coding-agent) skills and extensions for coding and related tasks.
+A personal collection of agent skills and extensions for coding and related tasks.
 
-They implement a **plan → implement → review** workflow for feature work:
+Skills under [`skills/`](skills) are harness-neutral: they work in Claude Code, Codex, [pi](https://github.com/earendil-works/pi-coding-agent) and Grok, and the installer links them into each one you have. Skills under [`pi/skills/`](pi/skills) are pi-only for now; move a skill to `skills/` once it no longer depends on pi.
+
+The pi skills implement a **plan → implement → review** workflow for feature work:
 
 1. **`plan`** — a strong model interrogates you about scope, edge cases, types, design conventions, and testing criteria, then writes a test-driven plan of sequential atomic steps and audits it.
 2. **`implement`** — a cheap model executes one step at a time with strict test-driven verification, strict file scoping, and automatic retry/escalation when a step fails.
@@ -12,16 +14,35 @@ The [`skill-thinking`](pi/extensions/skill-thinking.ts) extension ties it togeth
 
 ## Contents
 
+### Harness-neutral skills (`skills/`)
+
+| Skill | Description |
+|-------|-------------|
+| [`design-sprint`](skills/design-sprint/SKILL.md) | Focused UI design sprint, run like an arena: several models (Claude, Codex, Grok, pi models) each build their own variant of a screen or component from your design system as dev-only previews, plus single-property decision options. Opens a local decisions page where you pick, keep the current version ("Do nothing" is always offered) or re-prompt any variant, and iterates until you submit. |
+
+### pi-only skills (`pi/skills/`)
+
 | Skill | Description |
 |-------|-------------|
 | [`plan`](pi/skills/plan/SKILL.md) | Senior Software Architect / Planner & QA Agent. Discovers the codebase (including your design system: styling approach, component library, design tokens), grills you with 3–5 questions at a time, drafts a `PLAN-<feature>.md` of sequential atomic steps with baseline/verification commands, and runs an automated audit pass. |
 | [`implement`](pi/skills/implement/SKILL.md) | Test-Driven Executor Agent. Executes one step, runs the baseline check before editing and the verification command after, stays strictly within the step's files, flips the step's status to `done`, and logs post-mortem learnings to `.pi/learnings.md`. |
 | [`review`](pi/skills/review/SKILL.md) | Holistic reviewer & design guardian. Checks the finished feature against the plan and your existing UI patterns, runs full typecheck/lint/tests, then appends an `APPROVE` verdict or adds `F1..Fn` fix steps to the plan. |
-| [`design-sprint`](pi/skills/design-sprint/SKILL.md) | Focused UI design sprint. Builds 2–4 distinct variants of a screen or component, plus single-property decision options, from your own design system as dev-only previews. Opens a local decisions page where you pick, keep the current version ("Do nothing" is always offered) or re-prompt any variant, and iterates until you submit. |
 
 ### Design sprint
 
-`/skill:design-sprint <screen or component> [what to explore]` serves a decisions page at `http://127.0.0.1:4390/`. Your picks, re-prompts and final answer are written to `.design-sprint/<slug>/feedback.jsonl`. The agent waits on that file with `scripts/wait.mjs`, adds new variants for each re-prompt, and the open page shows them within two seconds. The page and server need only Node; `node --test pi/skills/design-sprint/scripts/design-sprint.test.mjs` runs the skill's tests. The manifest format is in [`references/manifest.md`](pi/skills/design-sprint/references/manifest.md).
+Invoke it with a screen or component and what to explore. The syntax depends on the harness: `/design-sprint` in Claude Code, `$design-sprint` in Codex, `/skill:design-sprint` in pi, and the skill name in Grok.
+
+- **Variants from several models.** `scripts/lanes.mjs` runs one lane per model in parallel, each through its own CLI in headless mode (`claude -p`, `codex exec`, `grok --prompt-file`, `pi -p`). Each lane writes only its own preview directory. Every lane gets the same brief, so the variants differ by the models' own judgment, as in an arena. A lane that fails is recorded as a dropout, never silently replaced.
+- **Choosing models.** By default there is one lane per installed CLI on its default model. To pin models, write `~/.config/design-sprint/config.json`, or `.design-sprint/config.json` in a project:
+
+  ```json
+  { "models": ["claude:opus@high", "codex:gpt-6.1-sol@high", "grok:grok-4.7@high"], "critic": "codex:gpt-6.1-sol@high", "blind": true }
+  ```
+
+  Each entry is `<cli>:<model>[@<effort>]`; an empty model uses that CLI's default. `blind` hides which model made each variant until you submit. `node skills/design-sprint/scripts/lanes.mjs roster` prints the models a sprint will use.
+- **The decisions page** is served at `http://127.0.0.1:4390/`. Your picks, re-prompts and final answer go to `.design-sprint/<slug>/feedback.jsonl`. The agent waits on that file with `scripts/wait.mjs`, sends each re-prompt back to the model that built that variant, and the open page shows the result within two seconds.
+
+Everything needs only Node. `node --test skills/design-sprint/scripts/*.test.mjs` runs the skill's tests. The formats are in [`references/manifest.md`](skills/design-sprint/references/manifest.md) and [`references/lane-prompt.md`](skills/design-sprint/references/lane-prompt.md).
 
 ### Extensions
 
@@ -31,18 +52,19 @@ The [`skill-thinking`](pi/extensions/skill-thinking.ts) extension ties it togeth
 
 ## Requirements
 
-- [pi](https://github.com/earendil-works/pi-coding-agent) (the skills target pi's skill format and tool names)
+- One or more of Claude Code, Codex, pi and Grok. The skills in `pi/skills/` and the extension need [pi](https://github.com/earendil-works/pi-coding-agent).
+- Node.js for the scripts bundled with `design-sprint`.
 - The project you use them in should have its own test/type-check tooling (`tsc`, `vitest`, `pytest`, etc.); the skills discover it rather than bundle it.
 
 ## Installation
 
-**Quickest:** run the installer script, which symlinks all skills and extensions globally:
+**Quickest:** run the installer script. It links `skills/*` into every installed harness (`~/.claude/skills`, `~/.codex/skills`, `~/.grok/skills`, `~/.pi/agent/skills`), and links `pi/skills/*` and the pi extension into pi:
 
 ```bash
 ./install-globally.sh
 ```
 
-Restart pi (or `/reload`). Or choose a manual method below.
+Restart your harness, or run `/reload` in pi. The manual methods below cover the pi-only skills.
 
 Pick one method. The symlink approach is recommended because it makes updates automatic.
 

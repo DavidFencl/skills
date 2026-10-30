@@ -11,6 +11,8 @@ The decisions page renders `.design-sprint/<slug>/sprint.json` and polls it ever
 | `round` | number | Current round. Increment it each time you answer a batch of re-prompts. |
 | `viewports` | number[] | Preview widths. Default `[390, 1280]`. |
 | `themes` | string[] | Optional theme names. The page offers a theme switch and substitutes `{theme}` in preview URLs. |
+| `blind` | boolean | Hide which model made each variant until the user submits, so brand does not bias the pick. Default `false`; set it from the roster's `blind` setting. |
+| `dropouts` | object[] | Lanes that failed: `{ "id", "model", "reason" }`. Report them; never fill a dropout's slot with another model silently. |
 | `current` | preview | Today's screen. Shown on the direction's "Do nothing" card. |
 | `variants` | variant[] | Competing directions for the whole screen or component. |
 | `decisions` | decision[] | Single-property choices. Every option changes one thing. |
@@ -24,6 +26,8 @@ The decisions page renders `.design-sprint/<slug>/sprint.json` and polls it ever
 - `prompt`: the user's re-prompt text, shown on the card
 - `recommended: true` on at most one variant
 - `retired: true` hides a variant the user asked to replace
+- `model`: the descriptor of the model that built it, e.g. `codex:gpt-6.1-sol@high`, or `self` when you built it yourself
+- `reviews`: second opinions, as a list of `{ "model": "<descriptor>", "text": "<two or three sentences>" }` from models other than the author
 
 **decision**: `id` (`"1"`, `"2"`, ...), `question`, `why`, `recommendation` (an option id), `current` (a preview of today's behaviour) and `options`.
 

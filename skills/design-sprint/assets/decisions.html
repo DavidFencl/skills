@@ -132,6 +132,10 @@ function answerText() {
 }
 function renderAnswer() { $('answer').textContent = answerText() || 'nothing picked'; }
 
+// Blind sprints hide which model made each variant until the user submits.
+const submitted = () => state.feedback.some((event) => event.type === 'submit');
+const modelLabel = (model) => (state.sprint.blind && !submitted() ? 'model hidden' : model);
+
 function fill(template) {
 	return template.replaceAll('{theme}', encodeURIComponent(state.theme ?? '')).replaceAll('{width}', String(state.viewport));
 }
@@ -187,6 +191,7 @@ function renderVariants() {
 			el('h3', { textContent: variant.keep ? variant.label : `${variant.id} · ${variant.label}` }),
 			variant.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
 			variant.round ? el('span', { className: 'tag', textContent: `Round ${variant.round}` }) : null,
+			variant.model ? el('span', { className: 'tag', textContent: modelLabel(variant.model) }) : null,
 			el('span', { className: 'spacer' }),
 			variant.url ? el('a', { href: fill(variant.url), target: '_blank', rel: 'noopener', textContent: 'Open' }) : null,
 			pickButton('direction', value, variant.keep ? 'keep' : variant.id),
@@ -195,6 +200,9 @@ function renderVariants() {
 		if (variant.prompt) card.append(el('p', { className: 'muted', textContent: `From your request: “${variant.prompt}”` }));
 		for (const [label, text] of [['Intent', variant.intent], ['Trade-offs', variant.tradeoffs], ['', variant.note && !variant.keep ? variant.note : null]]) {
 			if (text) card.append(el('p', {}, [label ? el('strong', { textContent: `${label}: ` }) : null, text]));
+		}
+		for (const review of variant.reviews ?? []) {
+			card.append(el('p', { className: 'muted' }, [el('strong', { textContent: `Second opinion (${modelLabel(review.model)}): ` }), review.text]));
 		}
 		if (variant.keep && variant.note) card.append(el('p', { className: 'muted', textContent: variant.note }));
 		if (!variant.keep) card.append(el('details', {}, [el('summary', { textContent: `Change variant ${variant.id}` }), ...draftArea(`variant:${variant.id}`, `What should change in ${variant.id}?`)]));
@@ -311,7 +319,7 @@ $('submit').addEventListener('click', async () => {
 	const answer = answerText();
 	if (!answer) { $('send-status').textContent = 'Pick at least one option, or pick “Do nothing”.'; return; }
 	const record = await post({ type: 'submit', text: answer, option: $('notes').value.trim() || undefined });
-	if (record) $('send-status').textContent = 'Submitted. The agent will apply your picks.';
+	if (record) { $('send-status').textContent = 'Submitted. The agent will apply your picks.'; render(true); }
 });
 
 async function poll() {
