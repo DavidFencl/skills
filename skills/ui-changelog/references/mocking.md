@@ -6,7 +6,7 @@ Contents: the loop, reviewing a draft, mock fields, states, beyond REST (GraphQL
 
 ## The loop
 
-1. **Isolate.** Point the frontend's API URL at a closed loopback port (`VITE_API_URL=http://127.0.0.1:4399/api` or the project's equivalent) and set `"allowHosts": []` and `"placeholderImages": true` in the manifest. Requests then never leave the machine: other hosts are blocked, WebSockets included, and blocked images become placeholders.
+1. **Isolate.** Point the frontend's API URL at a closed loopback port (`VITE_API_URL=http://127.0.0.1:4399/api` or the project's equivalent) and set `"allowHosts": []`, `"servicePolicy": "mock-only"` and `"placeholderImages": true` in the manifest. Requests then never leave the machine: other hosts are blocked, WebSockets included, API calls no mock answers are blocked even on the frontend's own origin (where a dev-server proxy could forward them), and blocked images become placeholders.
 2. **Capture once without mocks.** Each shot prints its unanswered calls, and `<report-dir>/unanswered.json` lists every endpoint once: method, origin, path, reasons, example URLs, request body, and which shots called it. Fetch, XHR, EventSource and WebSocket calls count when they fail, are blocked, return 404 or 5xx, or get an HTML page back (a dev server's fallback for unknown paths).
 3. **Draft.** `node <skill-dir>/scripts/mocks.mjs draft <report-dir> --project <tsconfig.json or jsconfig.json>` writes `<report-dir>/mocks.draft.json` (`--out` to choose). For each endpoint it finds the code that calls it (URL literals and templates, with constant prefixes resolved), takes the response type from the call's type argument or the calling function's declared return type (unwrapping `Promise` and client wrappers such as axios's `{ data }`), and builds a value of that type. A solution-style tsconfig is expanded into its references. Without `--project` or without a TypeScript compiler, it falls back to a text search and leaves `TODO` bodies.
 4. **Review** the draft (below) and list it in the manifest, which lives in the same report directory: `"mocks": ["mocks.draft.json"]`.
@@ -29,7 +29,7 @@ Keep data fictional. Never paste real users' data from a database, log or produc
 
 Each mock answers requests whose URL matches `url`, a glob where `*` stays within one path segment and `**` crosses segments. The query string is ignored unless the glob contains `?`. `urlRegex` matches the full URL instead. Mocks get CORS headers and answer preflight requests, so an API on another origin works.
 
-Order: a shot's mocks, then top-level mocks, the last listed winning; then the HAR file; then `allowHosts`; then the network. A mock file in the `mocks` list is a JSON array of mock entries, and its relative paths (`file`, `handler`) resolve from the file's own directory.
+Order: a shot's mocks, then top-level mocks, the last listed winning; then the HAR file; then `servicePolicy` and `allowHosts`; then the network. A mock file in the `mocks` list is a JSON array of mock entries, and its relative paths (`file`, `handler`) resolve from the file's own directory.
 
 | Field | Meaning |
 | --- | --- |

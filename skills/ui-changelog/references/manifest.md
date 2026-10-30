@@ -22,6 +22,7 @@ Contents: top level, sides, shots, steps, result statuses, output files. Mock en
 | `localStorage` | none | `{ "key": value }` written before every page load, such as a dismissed cookie banner or a chosen language. |
 | `extraHTTPHeaders` | none | Sent with every request. |
 | `allowHosts` | none | When set, requests are blocked unless their host is the side's own host or in this list, WebSockets included. `[]` keeps every request on the frontend's host. Blocked requests are listed in each shot's capture details. |
+| `servicePolicy` | none | `"mock-only"` blocks every fetch, XHR, EventSource and WebSocket call that no mock or HAR entry answers, on the frontend's own origin too, where a dev-server proxy would otherwise forward it to a real backend. Dev-server hot-reload sockets stay open. Blocked calls are listed as unanswered. It guards the browser only: configure server processes (SSR, proxies) for a disposable stack or `mocks.mjs serve` before starting them. |
 | `placeholderImages` | `false` | With `allowHosts`, answer blocked image requests with a neutral placeholder instead of a broken image. |
 | `serviceWorkers` | `block` | `allow` lets the app register service workers. Blocked by default, because a service worker can answer requests itself, out of reach of mocks and `allowHosts`. |
 | `mocks` | `[]` | Mock objects, or paths to JSON files that hold arrays of them (`mocking.md`). |
@@ -100,6 +101,9 @@ Steps must not persist anything. Opening a dialog and typing into a field is fin
 | `removed` | The shot is marked `removed` and the before side captured. |
 | `failed` | A side that should have captured did not. The error is in `results.json` and the report. |
 | `unchanged` | Identical within `minDiffPixels`. Listed by name only in the report. |
+| `not-run` | The shot is in the manifest but has no result yet, for example after `--only`. Listed under Needs attention. |
+
+A kept result whose shot, shared settings or named files (mocks, HAR, init scripts, storage state) changed after it was captured is marked `stale` and listed under Needs attention.
 
 ## Output files
 

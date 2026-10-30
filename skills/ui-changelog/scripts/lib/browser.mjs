@@ -4,7 +4,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { answer, createSession, frame, loadMocks, placeholderSvg, websocketPlan } from './mocks.mjs';
-import { firstLine, loadDependency } from './util.mjs';
+import { firstLine, loadDependency, redactBody, redactUrl } from './util.mjs';
 
 export const VIEWPORT_PRESETS = {
   mobile: { width: 390, height: 844, mobile: true },
@@ -15,6 +15,9 @@ export const VIEWPORT_PRESETS = {
 const API_TYPES = new Set(['xhr', 'fetch', 'eventsource']);
 // Requests that stay open by design and must not hold up the wait for a quiet network.
 const LONG_LIVED_TYPES = new Set(['eventsource', 'websocket']);
+// Dev-server hot-reload sockets. `servicePolicy: "mock-only"` lets these through on the frontend's
+// own host and blocks every other socket.
+const HMR_PATHS = /^\/(?:$|@vite|_next\/webpack-hmr|__webpack_hmr|sockjs-node)/;
 
 export async function captureOne(browser, manifest, side, shot, file) {
   const timeout = manifest.timeoutMs ?? 10_000;
@@ -38,34 +41,53 @@ export async function captureOne(browser, manifest, side, shot, file) {
     ...shot.contextOptions,
   });
   const log = { unanswered: [], blocked: new Map(), errors: [], warnings: [] };
+  settings.warn = (message) => log.warnings.push(message);
   const mocked = new WeakSet();
+  const reported = new WeakSet();
   const pendingByDesign = new WeakSet();
   const inflight = new Set();
+  let session;
+  const network = () => ({
+    mocked: [...(session?.hits ?? [])].map(([name, count]) => ({ name, count })),
+    unanswered: dedupe(log.unanswered),
+    blocked: [...log.blocked.values()],
+    skipped: [...(session?.skipped ?? [])].map(([name, requests]) => ({ name, requests: [...new Set(requests)].slice(0, 5) })),
+  });
   try {
-    const session = createSession(loadMocks([...[].concat(manifest.mocks ?? []), ...[].concat(shot.mocks ?? [])], manifest.dir));
+    session = createSession(loadMocks([...[].concat(manifest.mocks ?? []), ...[].concat(shot.mocks ?? [])], manifest.dir));
     const ownHost = new URL(side.baseURL).host;
     const allowed = manifest.allowHosts ? new Set([ownHost, ...manifest.allowHosts]) : null;
     const isAllowed = (url) => !allowed || allowed.has(url.host) || allowed.has(url.hostname);
+    // With `mock-only`, an API call no mock answers is blocked even on the frontend's own origin,
+    // where a dev-server proxy would otherwise forward it to a real backend.
+    const mockOnly = manifest.servicePolicy === 'mock-only';
+    const socketAllowed = (url) => isAllowed(url) && (!mockOnly || (url.host === ownHost && HMR_PATHS.test(url.pathname)));
 
-    // Routes run newest first: mocks, then HAR replay, then the allowHosts guard, then the network.
-    if (allowed) {
+    // Routes run newest first: mocks, then HAR replay, then the guard, then the network.
+    if (allowed || mockOnly) {
       await context.route('**/*', (route) => {
         const request = route.request();
         const url = new URL(request.url());
-        if (!/^https?:$/.test(url.protocol) || isAllowed(url)) return route.continue();
+        if (!/^https?:$/.test(url.protocol)) return route.continue();
+        if (mockOnly && API_TYPES.has(request.resourceType())) {
+          reported.add(request);
+          log.unanswered.push({ method: request.method(), url: redactUrl(request.url()), resourceType: request.resourceType(), reason: 'blocked by servicePolicy mock-only: no mock matched', postData: redactBody(request.postData()) });
+          return route.abort('blockedbyclient').catch(() => {});
+        }
+        if (isAllowed(url)) return route.continue();
         const key = `${url.host} ${request.resourceType()}`;
-        log.blocked.set(key, { host: url.host, resourceType: request.resourceType(), count: (log.blocked.get(key)?.count ?? 0) + 1, example: request.url() });
+        log.blocked.set(key, { host: url.host, resourceType: request.resourceType(), count: (log.blocked.get(key)?.count ?? 0) + 1, example: redactUrl(request.url()) });
         if (manifest.placeholderImages && request.resourceType() === 'image') {
           return route.fulfill({ status: 200, contentType: 'image/svg+xml', body: placeholderSvg() }).catch(() => {});
         }
         return route.abort('blockedbyclient').catch(() => {});
       });
-      // WebSockets bypass HTTP routing, so allowHosts needs its own guard for them.
+      // WebSockets bypass HTTP routing, so the guard needs its own route for them.
       await context.routeWebSocket(() => true, (ws) => {
         const url = new URL(ws.url());
-        if (isAllowed(url)) return ws.connectToServer();
-        log.unanswered.push({ method: 'WS', url: ws.url(), resourceType: 'websocket', reason: 'blocked by allowHosts' });
-        ws.close({ code: 1008, reason: 'blocked by ui-changelog allowHosts' });
+        if (socketAllowed(url)) return ws.connectToServer();
+        log.unanswered.push({ method: 'WS', url: redactUrl(ws.url()), resourceType: 'websocket', reason: isAllowed(url) ? 'blocked by servicePolicy mock-only: no mock matched' : 'blocked by allowHosts' });
+        ws.close({ code: 1008, reason: 'blocked by ui-changelog' });
       });
     }
     const har = shot.har ?? manifest.har;
@@ -98,8 +120,8 @@ export async function captureOne(browser, manifest, side, shot, file) {
 
     const page = await context.newPage();
     const unanswered = (request, reason) => {
-      if (!API_TYPES.has(request.resourceType()) || mocked.has(request)) return;
-      log.unanswered.push({ method: request.method(), url: request.url(), resourceType: request.resourceType(), reason, postData: request.postData()?.slice(0, 4000) ?? null });
+      if (!API_TYPES.has(request.resourceType()) || mocked.has(request) || reported.has(request)) return;
+      log.unanswered.push({ method: request.method(), url: redactUrl(request.url()), resourceType: request.resourceType(), reason, postData: redactBody(request.postData()) });
     };
     page.on('request', (request) => {
       if (!LONG_LIVED_TYPES.has(request.resourceType())) inflight.add(request);
@@ -114,7 +136,7 @@ export async function captureOne(browser, manifest, side, shot, file) {
       if (status >= 500 || status === 404) unanswered(response.request(), String(status));
       else if (/text\/html/.test(response.headers()['content-type'] ?? '')) unanswered(response.request(), `${status} HTML (dev-server fallback page, not API data)`);
     });
-    page.on('websocket', (ws) => ws.on('socketerror', (error) => log.unanswered.push({ method: 'WS', url: ws.url(), resourceType: 'websocket', reason: firstLine(error) })));
+    page.on('websocket', (ws) => ws.on('socketerror', (error) => log.unanswered.push({ method: 'WS', url: redactUrl(ws.url()), resourceType: 'websocket', reason: firstLine(error) })));
     page.on('pageerror', (error) => log.errors.push(`uncaught: ${firstLine(error)}`));
     page.on('console', (message) => {
       // Failed loads are already listed as unanswered or blocked requests.
@@ -176,15 +198,14 @@ export async function captureOne(browser, manifest, side, shot, file) {
       url,
       width: png.width,
       height: png.height,
-      network: {
-        mocked: [...session.hits].map(([name, count]) => ({ name, count })),
-        unanswered: dedupe(log.unanswered),
-        blocked: [...log.blocked.values()],
-        skipped: [...session.skipped].map(([name, requests]) => ({ name, requests: [...new Set(requests)].slice(0, 5) })),
-      },
+      network: network(),
       errors: [...new Set(log.errors)],
-      warnings: log.warnings,
+      warnings: [...new Set(log.warnings)],
     };
+  } catch (error) {
+    // The network log explains most failed captures (a missing API leaves a spinner forever).
+    error.network = network();
+    throw error;
   } finally {
     await context.close();
   }
@@ -217,7 +238,7 @@ async function settle(page, settings, quiet) {
   await quiet();
   await page.evaluate(() => document.fonts?.ready).catch(() => {});
   for (const selector of settings.waitForHidden) {
-    await page.locator(selector).first().waitFor({ state: 'hidden', timeout: settings.timeout }).catch(() => {});
+    await page.locator(selector).first().waitFor({ state: 'hidden', timeout: settings.timeout }).catch(() => settings.warn(`${selector} was still visible after ${settings.timeout} ms (waitForHidden), so the shot may show a loading state`));
   }
   if (settings.settleMs !== 0) await page.waitForTimeout(settings.settleMs);
 }

@@ -3,10 +3,10 @@
 # install-globally.sh: symlink every skill in skills/ into the skill folder of each agent
 # harness installed on this machine, so updates to this repo apply everywhere.
 #
-#   Claude Code  ~/.claude/skills/
-#   Codex        ~/.codex/skills/
-#   pi           ~/.pi/agent/skills/
-#   Grok         ~/.grok/skills/
+#   Claude Code  ${CLAUDE_CONFIG_DIR:-~/.claude}/skills/
+#   Codex        ${CODEX_HOME:-~/.codex}/skills/
+#   pi           ${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills/
+#   Grok         ${GROK_HOME:-~/.grok}/skills/
 #
 # A harness is skipped when its config directory does not exist. Safe to re-run. A destination
 # that already exists as a real directory (not a symlink) is left untouched.
@@ -16,10 +16,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 declare -A HARNESSES=(
-  ["Claude Code"]="$HOME/.claude:$HOME/.claude/skills"
-  ["Codex"]="$HOME/.codex:$HOME/.codex/skills"
-  ["pi"]="$HOME/.pi/agent:$HOME/.pi/agent/skills"
-  ["Grok"]="$HOME/.grok:$HOME/.grok/skills"
+  ["Claude Code"]="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+  ["Codex"]="${CODEX_HOME:-$HOME/.codex}"
+  ["pi"]="${PI_CODING_AGENT_DIR:-$HOME/.pi/agent}"
+  ["Grok"]="${GROK_HOME:-$HOME/.grok}"
 )
 
 install_link() {
@@ -36,7 +36,8 @@ install_link() {
 }
 
 for harness in "${!HARNESSES[@]}"; do
-  IFS=: read -r root skills_dir <<<"${HARNESSES[$harness]}"
+  root="${HARNESSES[$harness]}"
+  skills_dir="$root/skills"
   if [ ! -d "$root" ]; then
     echo "${harness}: not installed (${root} missing), skipped"
     continue

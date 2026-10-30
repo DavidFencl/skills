@@ -536,6 +536,128 @@ describe('end to end: fixture app with no API', { skip: NO_BROWSER }, () => {
   });
 });
 
+describe('redaction of shared artifacts', async () => {
+  const { redactBody, redactUrl } = await import(path.join(SCRIPTS, 'lib', 'util.mjs'));
+
+  test('query values and request-body values are replaced, the GraphQL operation is kept', () => {
+    assert.equal(redactUrl('http://127.0.0.1:4399/api/x?token=abc123&page=2&operationName=Stats'), 'http://127.0.0.1:4399/api/x?token=_&page=_&operationName=Stats');
+    const body = redactBody(JSON.stringify({ operationName: 'Login', query: 'mutation Login { ok }', variables: { email: 'a@b.c', password: 'hunter2', remember: true } }));
+    assert.doesNotMatch(body, /hunter2|a@b\.c/);
+    assert.deepEqual(JSON.parse(body), { operationName: 'Login', query: 'mutation Login { ok }', variables: { email: '<string>', password: '<string>', remember: '<boolean>' } });
+    assert.equal(redactBody('user=a&pass=b'), '[13 bytes, not JSON]');
+  });
+});
+
+describe('review integrity', async () => {
+  const { analyze } = await import(path.join(SCRIPTS, 'lib', 'report.mjs'));
+
+  test('GraphQL operations on one URL are separate unanswered endpoints', () => {
+    const call = (operation) => ({ method: 'POST', url: 'http://127.0.0.1:4399/graphql', reason: 'refused', postData: JSON.stringify({ operationName: operation, query: `query ${operation} { x }` }) });
+    const facts = analyze({ before: {}, after: {}, shots: [{ id: 's', label: 'S', status: 'unchanged', sources: [], before: {}, after: { network: { unanswered: [call('Stats'), call('Viewer')] } } }] });
+    assert.deepEqual(facts.unanswered.map((entry) => entry.operation).sort(), ['Stats', 'Viewer']);
+  });
+
+  test('ids that would share a file name are refused', () => {
+    const manifest = path.join(TMP, 'collide.json');
+    writeFileSync(manifest, JSON.stringify({ before: { baseURL: 'http://127.0.0.1:1' }, after: { baseURL: 'http://127.0.0.1:1' }, shots: [{ id: 'a-b' }, { id: 'A b' }] }));
+    const result = run('capture.mjs', [manifest, '--out', path.join(TMP, 'collide')]);
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /would share the file name a-b/);
+  });
+
+  test('compare keeps the per-shot threshold it was captured with', { skip: NO_BROWSER }, () => {
+    const { PNG } = toolRequire('pngjs');
+    const dir = path.join(TMP, 'threshold');
+    mkdirSync(path.join(dir, 'shots'), { recursive: true });
+    for (const [side, level] of [['before', 100], ['after', 160]]) {
+      const png = new PNG({ width: 40, height: 40 });
+      png.data.fill(255);
+      for (let i = 0; i < 40 * 40; i++) png.data.set([level, level, level, 255], i * 4);
+      writeFileSync(path.join(dir, 'shots', `t-${side}.png`), PNG.sync.write(png));
+    }
+    writeFileSync(path.join(dir, 'results.json'), JSON.stringify({ title: 't', before: {}, after: {}, shots: [{ id: 't', label: 't', sources: [], threshold: 0.5, status: 'changed', before: { file: 'shots/t-before.png' }, after: { file: 'shots/t-after.png' } }] }));
+    assert.equal(run('capture.mjs', ['compare', '--out', dir]).status, 0);
+    assert.equal(readJson(path.join(dir, 'results.json')).shots[0].status, 'unchanged');
+  });
+
+  test('a moved line between two nearby changes is not marked as changed', { skip: NO_BROWSER }, async () => {
+    const { compareShot } = await import(path.join(SCRIPTS, 'lib', 'compare.mjs'));
+    const { PNG } = toolRequire('pngjs');
+    const dir = path.join(TMP, 'merged-band');
+    mkdirSync(path.join(dir, 'shots'), { recursive: true });
+    const page = (bars) => {
+      const png = new PNG({ width: 200, height: 100 });
+      png.data.fill(255);
+      for (const [top, size, level = 40] of bars) for (let y = top; y < top + size; y++) for (let x = 20; x < 180; x++) png.data.set([level, level, level, 255], (y * 200 + x) * 4);
+      return png;
+    };
+    // Before: a short line, then a status line. After: a banner inserted above both, and the status changed.
+    writeFileSync(path.join(dir, 'shots', 'm-before.png'), PNG.sync.write(page([[14, 6], [24, 8]])));
+    writeFileSync(path.join(dir, 'shots', 'm-after.png'), PNG.sync.write(page([[10, 20, 120], [34, 6], [44, 8, 150]])));
+    process.env.UI_CHANGELOG_DEBUG = '1';
+    try {
+      await compareShot(dir, { id: 'm' }, { before: { file: 'shots/m-before.png' }, after: { file: 'shots/m-after.png' } });
+    } finally {
+      delete process.env.UI_CHANGELOG_DEBUG;
+    }
+    const mask = PNG.sync.read(readFileSync(path.join(dir, 'shots', 'm-mask.png')));
+    const markedRows = new Set();
+    for (let y = 0; y < mask.height; y++) for (let x = 0; x < mask.width; x++) if (mask.data[(y * mask.width + x) * 4 + 3]) markedRows.add(y);
+    assert.ok(markedRows.has(15) && markedRows.has(46), 'the banner and the changed status are marked');
+    for (let y = 34; y < 40; y++) assert.ok(!markedRows.has(y), `moved line row ${y} is not marked`);
+  });
+});
+
+describe('servicePolicy, staleness and strict mode', { skip: NO_BROWSER }, () => {
+  const fixture = path.join(FIXTURES, 'mock-kinds');
+  const base = readJson(path.join(fixture, 'manifest.json'));
+  const guards = { id: 'guards', label: 'Guards', path: '/?scenario=guards' };
+  const write = (name, manifest) => {
+    const file = path.join(fixture, `.test-${name}.json`);
+    writeFileSync(file, JSON.stringify({ ...manifest, before: base.before, after: base.after }));
+    return file;
+  };
+  const files = [];
+  let servers;
+  before(async () => {
+    servers = await startFixtureServers(fixture, [47020, 47021]);
+  });
+  after(() => {
+    servers?.forEach((child) => child.kill());
+    files.forEach((file) => rmSync(file, { force: true }));
+  });
+
+  test('mock-only blocks unmocked same-origin API calls, and the report copy of the manifest has no secrets', () => {
+    const manifest = write('mock-only', { allowHosts: [], servicePolicy: 'mock-only', extraHTTPHeaders: { 'x-api-token': 'secret-123' }, localStorage: { jwt: 'jwt-value' }, shots: [guards] });
+    files.push(manifest);
+    const out = path.join(TMP, 'mock-only');
+    const result = run('capture.mjs', [manifest, '--out', out]);
+    assert.equal(result.status, 0, result.stderr);
+    const [shot] = readJson(path.join(out, 'results.json')).shots;
+    const reasons = shot.after.network.unanswered.filter((call) => call.url.endsWith('/api/settings')).map((call) => call.reason);
+    assert.deepEqual(reasons, ['blocked by servicePolicy mock-only: no mock matched']);
+    const copy = readFileSync(path.join(out, 'manifest.json'), 'utf8');
+    assert.doesNotMatch(copy, /secret-123|jwt-value/);
+  });
+
+  test('kept results go stale when the manifest changes, missing results show as not run, and --strict exits 2', () => {
+    const out = path.join(TMP, 'stale');
+    const first = write('stale-1', { shots: [guards, { ...guards, id: 'guards-2', label: 'Guards 2' }] });
+    files.push(first);
+    assert.equal(run('capture.mjs', [first, '--out', out]).status, 0);
+    const second = write('stale-2', { hide: ['.nothing'], shots: [guards, { ...guards, id: 'guards-2', label: 'Guards 2' }, { ...guards, id: 'guards-3', label: 'Guards 3' }] });
+    files.push(second);
+    const result = run('capture.mjs', [second, '--out', out, '--only', 'guards', '--strict']);
+    assert.equal(result.status, 2, result.stderr);
+    const byId = Object.fromEntries(readJson(path.join(out, 'results.json')).shots.map((shot) => [shot.id, shot]));
+    assert.equal(byId.guards.stale, undefined);
+    assert.equal(byId['guards-2'].stale, true);
+    assert.equal(byId['guards-3'].status, 'not-run');
+    assert.match(result.stderr, /Guards 2: Captured with an earlier version/);
+    assert.match(result.stderr, /Guards 3: Not run/);
+  });
+});
+
 describe('mock server', () => {
   test('serves the same mocks over HTTP with CORS, 404s for the rest, and SSE', async () => {
     const file = path.join(TMP, 'served-mocks.json');

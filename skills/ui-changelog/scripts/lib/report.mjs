@@ -1,6 +1,7 @@
 // Renders a capture run (results.json) as index.html, report.md and unanswered.json.
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { graphqlOperation } from './mocks.mjs';
 import { escapeHtml as esc, mdCell, slug } from './util.mjs';
 
 const TITLES = { changed: 'Changed', added: 'New', removed: 'Removed', failed: 'Not captured' };
@@ -19,6 +20,8 @@ export function analyze(run) {
     add(null, `Before and after are the same commit (${run.before.git.commit}) with no local changes.`);
   }
   for (const shot of shots) {
+    if (shot.status === 'not-run') add(shot, `Not run: the shot is in the manifest but has no result. Capture it with --only ${shot.id}.`);
+    if (shot.stale) add(shot, `Captured with an earlier version of the manifest, mocks or fixtures. Recapture it with --only ${shot.id}.`);
     const mismatch = expectationMismatch(shot);
     if (mismatch) add(shot, mismatch);
     if (shot.status === 'failed') add(shot, `Not captured: ${sideErrors(shot).join('; ')}`);
@@ -74,8 +77,10 @@ function aggregateUnanswered(run) {
       for (const call of shot[side]?.network?.unanswered ?? []) {
         const url = new URL(call.url);
         const origin = url.origin === own ? '' : url.origin;
-        const key = `${call.method} ${origin}${url.pathname}`;
-        const entry = byKey.get(key) ?? { method: call.method, origin, path: url.pathname, resourceType: call.resourceType, reasons: [], examples: [], postData: call.postData ?? null, shots: [] };
+        // GraphQL operations share one URL, so each operation is its own endpoint.
+        const operation = call.method === 'WS' ? null : graphqlOperation({ body: call.postData, url });
+        const key = `${call.method} ${origin}${url.pathname}${operation ? ` ${operation}` : ''}`;
+        const entry = byKey.get(key) ?? { method: call.method, origin, path: url.pathname, ...(operation ? { operation } : {}), resourceType: call.resourceType, reasons: [], examples: [], postData: call.postData ?? null, shots: [] };
         if (!entry.reasons.includes(call.reason)) entry.reasons.push(call.reason);
         if (!entry.examples.includes(call.url) && entry.examples.length < 3) entry.examples.push(call.url);
         if (!entry.shots.includes(shot.id)) entry.shots.push(shot.id);

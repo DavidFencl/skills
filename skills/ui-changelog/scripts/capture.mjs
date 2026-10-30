@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Captures before/after screenshot pairs from a manifest, compares them, and writes the review report.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { captureOne, login, VIEWPORT_PRESETS } from './lib/browser.mjs';
@@ -9,21 +10,23 @@ import { writeReport } from './lib/report.mjs';
 import { SCRIPTS_DIR, fail, firstLine, flag, loadDependency, readJson, slug } from './lib/util.mjs';
 
 const USAGE = `Usage:
-  node capture.mjs <manifest.json> --out <dir> [--only <id>[,<id>...]] [--headed]
+  node capture.mjs <manifest.json> --out <dir> [--only <id>[,<id>...]] [--headed] [--strict]
       Capture every shot on both sides, compare, and write index.html, report.md,
       results.json, unanswered.json and shots/ into <dir>. With --only, recapture
       those shot ids (or viewport groups) and merge them into the existing results.
+      With --strict, exit 2 when the report has items that need attention.
   node capture.mjs compare --out <dir>     Re-diff the captured PNGs, then re-render.
   node capture.mjs report --out <dir>      Re-render index.html and report.md from results.json.
   node capture.mjs login <url> <state.json> Open a browser, log in, close the window to save the session.
 
 Manifest fields: ${path.join(path.dirname(SCRIPTS_DIR), 'references', 'manifest.md')}`;
 
-const TOP_KEYS = new Set(['title', 'before', 'after', 'shots', 'viewport', 'viewports', 'viewportPresets', 'deviceScaleFactor', 'colorScheme', 'locale', 'timezoneId', 'fixedTime', 'storageState', 'localStorage', 'extraHTTPHeaders', 'allowHosts', 'mask', 'hide', 'waitForHidden', 'settleMs', 'timeoutMs', 'networkIdleTimeoutMs', 'mocks', 'har', 'minDiffPixels', 'serviceWorkers', 'contextOptions', 'initScripts', 'placeholderImages', 'changedFiles', 'notCaptured']);
+const TOP_KEYS = new Set(['title', 'before', 'after', 'shots', 'viewport', 'viewports', 'viewportPresets', 'deviceScaleFactor', 'colorScheme', 'locale', 'timezoneId', 'fixedTime', 'storageState', 'localStorage', 'extraHTTPHeaders', 'allowHosts', 'mask', 'hide', 'waitForHidden', 'settleMs', 'timeoutMs', 'networkIdleTimeoutMs', 'mocks', 'har', 'minDiffPixels', 'serviceWorkers', 'contextOptions', 'initScripts', 'placeholderImages', 'changedFiles', 'notCaptured', 'servicePolicy']);
 const SIDE_KEYS = new Set(['baseURL', 'ref', 'storageState', 'dir']);
 const SHOT_KEYS = new Set(['id', 'label', 'path', 'viewports', 'viewport', 'selector', 'padding', 'fullPage', 'new', 'removed', 'steps', 'waitFor', 'mask', 'hide', 'colorScheme', 'locale', 'deviceScaleFactor', 'har', 'networkIdleTimeoutMs', 'mocks', 'threshold', 'sources', 'note', 'expect', 'initScripts', 'contextOptions']);
 
 const [command, ...rest] = process.argv.slice(2);
+const strict = process.argv.includes('--strict');
 if (!command || ['help', '--help', '-h'].includes(command)) {
   console.log(USAGE);
   process.exit(command ? 0 : 1);
@@ -68,10 +71,11 @@ async function captureAll(manifestPath, argv) {
   const { chromium } = loadDependency('playwright');
   const browser = await chromium.launch({ headless: !argv.includes('--headed') });
   const previous = existsSync(path.join(outDir, 'results.json')) ? readResults(outDir).shots : [];
-  const results = new Map(previous.map((result) => [result.id, result]));
+  const fingerprints = new Map(manifest.shots.map((shot) => [shot.id, fingerprint(manifest, shot)]));
+  const results = new Map(previous.filter((result) => fingerprints.has(result.id)).map((result) => [result.id, { ...result, stale: result.fingerprint !== fingerprints.get(result.id) }]));
   try {
     for (const shot of shots) {
-      const result = describeShot(manifest, shot);
+      const result = { ...describeShot(manifest, shot), fingerprint: fingerprints.get(shot.id) };
       for (const side of ['before', 'after']) {
         const file = path.join('shots', `${slug(shot.id)}-${side}.png`);
         if ((side === 'before' && shot.new) || (side === 'after' && shot.removed)) {
@@ -88,7 +92,7 @@ async function captureAll(manifestPath, argv) {
           })
           .then(
             (info) => ({ file, ...info, ...(retried ? { retried } : {}) }),
-            (error) => ({ error: firstLine(error) }),
+            (error) => ({ error: firstLine(error), ...(error.network ? { network: error.network } : {}) }),
           );
       }
       Object.assign(result, await compareShot(outDir, shot, result, manifest.minDiffPixels ?? 0));
@@ -101,8 +105,7 @@ async function captureAll(manifestPath, argv) {
   } finally {
     await browser.close();
   }
-  const copied = path.join(outDir, 'manifest.json');
-  if (path.resolve(manifestPath) !== copied) copyFileSync(manifestPath, copied);
+  writeFileSync(path.join(outDir, 'manifest.json'), `${JSON.stringify(redactManifest(readJson(manifestPath, 'manifest')), null, 2)}\n`);
   const run = {
     schemaVersion: 2,
     title: manifest.title ?? 'UI changelog',
@@ -113,7 +116,7 @@ async function captureAll(manifestPath, argv) {
     minDiffPixels: manifest.minDiffPixels ?? 0,
     changedFiles: manifest.changedFiles,
     notCaptured: manifest.notCaptured,
-    shots: manifest.shots.map((shot) => results.get(shot.id)).filter(Boolean),
+    shots: manifest.shots.map((shot) => results.get(shot.id) ?? { ...describeShot(manifest, shot), status: 'not-run' }),
     outDir,
   };
   finish(run);
@@ -128,6 +131,7 @@ function describeShot(manifest, shot) {
     sources: shot.sources ?? [],
     note: shot.note,
     expect: shot.expect,
+    threshold: shot.threshold,
     viewport: { name: shot.viewportName, ...(shot.viewport ?? manifest.viewport ?? VIEWPORT_PRESETS.desktop) },
     settings: {
       selector: shot.selector,
@@ -145,6 +149,7 @@ function finish(run, { rewriteResults = true } = {}) {
   const { outDir, ...saved } = run;
   if (rewriteResults) writeFileSync(path.join(outDir, 'results.json'), `${JSON.stringify(saved, null, 2)}\n`);
   const facts = writeReport(run);
+  if (strict && facts.attention.length) process.exitCode = 2;
   const summary = [...facts.groups.map(([status, list]) => `${list.length} ${status === 'added' ? 'new' : status}`), facts.unchanged.length ? `${facts.unchanged.length} unchanged` : ''].filter(Boolean);
   console.error(`\n${summary.join(' · ') || 'no shots'}${facts.attention.length ? ` · ${facts.attention.length} need${facts.attention.length === 1 ? 's' : ''} attention` : ''}`);
   for (const item of facts.attention) console.error(`  ! ${item.label ? `${item.label}: ` : ''}${item.text}`);
@@ -203,11 +208,39 @@ function readResults(outDir) {
   return { ...JSON.parse(readFileSync(file, 'utf8')), outDir: path.resolve(outDir) };
 }
 
+// File names come from slug(id), so ids that differ only in case or punctuation would overwrite each other's PNGs.
 function assertUniqueIds(shots) {
-  const seen = new Set();
+  const seen = new Map();
   for (const shot of shots) {
     if (!shot.id) fail(`every shot needs an id: ${JSON.stringify(shot)}`);
-    if (seen.has(shot.id)) fail(`duplicate shot id ${shot.id}`);
-    seen.add(shot.id);
+    const name = slug(shot.id);
+    if (seen.has(name)) fail(seen.get(name) === shot.id ? `duplicate shot id ${shot.id}` : `shot ids ${seen.get(name)} and ${shot.id} would share the file name ${name}-*.png`);
+    seen.set(name, shot.id);
   }
+}
+
+// What a capture depended on: the shot, the shared settings, and the bytes of every file they name.
+// A kept result whose fingerprint differs from the current manifest is marked stale.
+function fingerprint(manifest, shot) {
+  const { shots, title, changedFiles, notCaptured, dir, ...shared } = manifest;
+  const { label, note, sources, expect, ...captured } = shot;
+  const files = [...[].concat(shared.mocks ?? [], captured.mocks ?? [], shared.initScripts ?? [], captured.initScripts ?? []), shared.har, captured.har, shared.storageState]
+    .filter((entry) => typeof entry === 'string')
+    .map((file) => {
+      const resolved = path.resolve(dir, file);
+      return existsSync(resolved) && statSync(resolved).isFile() ? createHash('sha1').update(readFileSync(resolved)).digest('hex') : `missing ${file}`;
+    });
+  return createHash('sha1').update(JSON.stringify({ shared, captured, files })).digest('hex').slice(0, 16);
+}
+
+// The report copy of the manifest must not carry credentials.
+function redactManifest(manifest) {
+  const SECRET = /token|secret|password|passwd|authorization|cookie|session|jwt|api[-_]?key/i;
+  const walk = (value, key = '', parent = '') => {
+    if (typeof value === 'string' && (SECRET.test(key) || ['extraHTTPHeaders', 'localStorage'].includes(parent))) return '[redacted]';
+    if (Array.isArray(value)) return value.map((item) => walk(item, '', parent));
+    if (value && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([name, item]) => [name, walk(item, name, key)]));
+    return value;
+  };
+  return walk(manifest);
 }

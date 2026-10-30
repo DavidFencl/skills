@@ -74,7 +74,7 @@ Set each side's `dir` in the manifest to its checkout, so the report records the
 
 Use a backend only when the project's rules say it is safe and both sides can share it. Otherwise mock it, which also makes every capture repeatable:
 
-1. Point the frontend's API URL at a closed loopback port, such as `http://127.0.0.1:4399/api`, and set `"allowHosts": []` and `"placeholderImages": true`. Nothing then leaves the machine: requests to other hosts, WebSockets included, are blocked and listed, and blocked images render as neutral placeholders.
+1. Point the frontend's API URL at a closed loopback port, such as `http://127.0.0.1:4399/api`, and set `"allowHosts": []`, `"servicePolicy": "mock-only"` and `"placeholderImages": true`. Nothing then leaves the machine: requests to other hosts, WebSockets included, are blocked and listed, API calls no mock answers are blocked even on the frontend's own origin, and blocked images render as neutral placeholders. These guard the browser only, so start server processes (SSR, dev proxies) against mocks or a disposable stack.
 2. Capture once without mocks. The run lists each unanswered fetch, XHR, EventSource and WebSocket call and writes them to `<report-dir>/unanswered.json`.
 3. Draft mocks from the project's own types:
 
@@ -100,6 +100,7 @@ Both sides get the same mocks, so any difference comes from the frontend code. U
   "viewports": ["desktop", "mobile"],
   "fixedTime": "2026-01-15T10:00:00Z",
   "allowHosts": [],
+  "servicePolicy": "mock-only",
   "placeholderImages": true,
   "hide": [".app-version"],
   "mocks": ["mocks.draft.json"],
@@ -137,7 +138,7 @@ Open `index.html` and look at every changed, new and removed image. Work through
 
 The circled image outlines what is new or modified on the after side, numbered to match the close-ups. Content that only moved, for example pushed down by an inserted element, is not circled; the diff image marks every differing pixel, moved content included. A circled region you cannot explain is either noise to mask or a real side effect worth reporting.
 
-Recapture only the fixed shots with `--only <id>,<id>`; results merge into the existing report. A side that fails is retried once automatically, which absorbs dev-server reloads. `capture.mjs compare --out <report-dir>` re-diffs the existing PNGs without a browser, and `capture.mjs report --out <report-dir>` only re-renders the HTML and Markdown.
+Recapture only the fixed shots with `--only <id>,<id>`; results merge into the existing report. A side that fails is retried once automatically, which absorbs dev-server reloads. Kept results whose manifest, mocks or fixture files changed since they were captured are flagged as stale, and shots without a result as not run. `capture.mjs compare --out <report-dir>` re-diffs the existing PNGs without a browser, and `capture.mjs report --out <report-dir>` only re-renders the HTML and Markdown. Add `--strict` to any of them to exit with status 2 while items need attention, which suits scripted checks.
 
 ## 8. Hand over and clean up
 

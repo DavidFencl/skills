@@ -56,3 +56,31 @@ export function fail(message) {
 export function unique(values) {
   return [...new Set(values)];
 }
+
+// URLs and request bodies land in results.json and unanswered.json, which get shared. Keep what
+// drafting mocks needs (paths, query keys, the GraphQL operation and document, the JSON shape) and
+// replace every other value, because query strings and bodies carry tokens and passwords.
+const KEPT_FIELDS = new Set(['operationName', 'query']);
+
+export function redactUrl(raw) {
+  const url = new URL(raw);
+  for (const key of new Set(url.searchParams.keys())) if (!KEPT_FIELDS.has(key)) url.searchParams.set(key, '_');
+  return url.toString();
+}
+
+export function redactBody(text) {
+  if (text == null || text === '') return null;
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    return `[${text.length} bytes, not JSON]`;
+  }
+  const shape = (item, key) => {
+    if (KEPT_FIELDS.has(key) && typeof item === 'string') return item;
+    if (Array.isArray(item)) return item.slice(0, 3).map((entry) => shape(entry));
+    if (item && typeof item === 'object') return Object.fromEntries(Object.entries(item).map(([name, entry]) => [name, shape(entry, name)]));
+    return item === null ? null : `<${typeof item}>`;
+  };
+  return JSON.stringify(shape(value)).slice(0, 4000);
+}

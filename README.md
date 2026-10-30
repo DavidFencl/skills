@@ -30,7 +30,7 @@ The report directory, by default `~/.local/state/ui-changelog/<repo>/<timestamp>
 | --- | --- |
 | `index.html` | A Needs attention list (unexpected results, unanswered API calls, errors only on the after side, changed files with no shot), coverage of the changed files, and changed rows with Before, After, Circled changes and Diff, numbered close-ups and a swipe view, plus new and removed UI. Unchanged checks are listed by name. |
 | `report.md` | The same as Markdown tables with relative image paths, ready for `gh pr edit --attach`. |
-| `results.json`, `unanswered.json`, `shots/`, `manifest.json` | Raw results, the endpoints that got no answer, PNGs, and the manifest used. |
+| `results.json`, `unanswered.json`, `shots/`, `manifest.json` | Raw results, the endpoints that got no answer (query and body values redacted), PNGs, and the manifest used (credentials redacted). |
 
 The circled view aligns rows like a text diff, so content that only moved is not circled. Playwright, pngjs and pixelmatch are installed by `scripts/setup.sh` into `~/.cache/ui-changelog`, never into the project under review. Requires Node 22.12 or newer.
 

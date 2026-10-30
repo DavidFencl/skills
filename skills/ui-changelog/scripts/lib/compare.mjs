@@ -50,7 +50,7 @@ export function shiftAwareMask(PNG, a, b) {
   return alignBlock(a, b, mask, bands, { x0: 0, x1: b.width, a0: 0, a1: a.height, b0: 0, b1: b.height }, 0) ? { mask, bands } : null;
 }
 
-function alignBlock(a, b, mask, marked, { x0, x1, a0, a1, b0, b1 }, depth) {
+function alignBlock(a, b, mask, marked, { x0, x1, a0, a1, b0, b1 }, depth, merge = true) {
   const ids = new Map();
   const rowIds = (image, from, to) =>
     Array.from({ length: to - from }, (_, i) => {
@@ -68,7 +68,7 @@ function alignBlock(a, b, mask, marked, { x0, x1, a0, a1, b0, b1 }, depth) {
     if (band.aEnd <= band.aStart && band.bEnd <= band.bStart) continue;
     const last = bands.at(-1);
     // Blank rows match by chance and fragment one change into many hunks; nearby hunks are one change.
-    if (last && band.aStart - last.aEnd <= 24 && band.bStart - last.bEnd <= 24) Object.assign(last, { aEnd: band.aEnd, bEnd: band.bEnd });
+    if (merge && last && band.aStart - last.aEnd <= 24 && band.bStart - last.bEnd <= 24) Object.assign(last, { aEnd: band.aEnd, bEnd: band.bEnd, merged: true });
     else bands.push(band);
   }
   for (const band of bands) {
@@ -88,6 +88,9 @@ function alignBlock(a, b, mask, marked, { x0, x1, a0, a1, b0, b1 }, depth) {
           marked.push({ ...band, x0: s0, x1: s1 });
         }
       }
+    } else if (band.merged && depth < 3 && alignBlock(a, b, mask, marked, { x0, x1, a0: band.aStart, a1: band.aEnd, b0: band.bStart, b1: band.bEnd }, depth + 1, false)) {
+      // A single-column merged band: realign its hunks separately, so content that only moved
+      // between two nearby changes is not circled with them.
     } else {
       markPixels(a, b, mask, band);
       marked.push(band);
