@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { buildCommand, outsideChanges, parseDescriptor, resolveRoster, runLane, snapshotChanges } from './lanes.mjs';
+import { allocateLanes, buildCommand, outsideChanges, parseDescriptor, resolveRoster, runLane, snapshotChanges } from './lanes.mjs';
 
 function tempDir(t) {
 	const dir = mkdtempSync(join(tmpdir(), 'design-sprint-lanes-'));
@@ -61,6 +61,33 @@ test('the roster prefers the project config, then the global config, then instal
 
 	writeFileSync(join(project, '.design-sprint', 'config.json'), JSON.stringify({ models: ['cursor:x'] }));
 	assert.throws(() => resolveRoster({ cwd: project, home, env, installed }), /Unknown CLI/);
+});
+
+test('variants spread over the models before any model gets a second lane', () => {
+	assert.deepEqual(allocateLanes(['claude:opus', 'codex:', 'grok:'], 5), [
+		{ id: 'A', model: 'claude:opus', take: 1 },
+		{ id: 'B', model: 'codex:', take: 1 },
+		{ id: 'C', model: 'grok:', take: 1 },
+		{ id: 'D', model: 'claude:opus', take: 2 },
+		{ id: 'E', model: 'codex:', take: 2 },
+	]);
+	assert.deepEqual(allocateLanes(['claude:opus', 'codex:']).map((lane) => lane.model), ['claude:opus', 'codex:']);
+	assert.deepEqual(allocateLanes(['claude:opus', 'codex:'], 1), [{ id: 'A', model: 'claude:opus', take: 1 }]);
+	for (const count of [0, 2.5, Number.NaN, 27]) assert.throws(() => allocateLanes(['codex:'], count), /whole number from 1 to 26/);
+});
+
+test('the roster command allocates the configured or requested number of variants', (t) => {
+	const home = tempDir(t);
+	const project = tempDir(t);
+	mkdirSync(join(project, '.design-sprint'));
+	writeFileSync(join(project, '.design-sprint', 'config.json'), JSON.stringify({ models: ['claude:opus', 'codex:'], variants: 3 }));
+	const roster = (...args) => {
+		const result = spawnSync(process.execPath, [join(import.meta.dirname, 'lanes.mjs'), 'roster', '--cwd', project, ...args], { encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: home } });
+		assert.equal(result.status, 0, result.stderr);
+		return JSON.parse(result.stdout).lanes.map(({ id, model, take }) => `${id}=${model}#${take}`);
+	};
+	assert.deepEqual(roster(), ['A=claude:opus#1', 'B=codex:#1', 'C=claude:opus#2']);
+	assert.deepEqual(roster('--variants', '2'), ['A=claude:opus#1', 'B=codex:#1']);
 });
 
 function laneSetup(t) {
