@@ -1,6 +1,6 @@
 # Lane prompt template
 
-Copy this into `.design-sprint/<slug>/lanes/<id>.prompt.md` for each lane and fill in the angle-bracket parts. Every lane gets the same brief, so the variants differ by the models' own judgment. Only `<lane id>`, the owned paths and, on a re-prompt, the change request differ.
+Copy this into `.design-sprint/<slug>/lanes/<id>.prompt.md` for each lane and fill in the angle-bracket parts. Every lane gets the same brief, so the variants differ by the models' own judgment. Only `<lane id>`, the owned paths, the angle of a model with several lanes and, on a re-prompt, the change request differ.
 
 ---
 
@@ -9,6 +9,8 @@ You are one of several designers, each working on a different model, who answer 
 ## Brief
 
 <the five-line brief: who uses it, their one task, the facts it must show, the primary action, constraints>
+
+<when this lane's model has several lanes: "Your angle: «<angle>». Other lanes on your model take other angles, so commit to yours.">
 
 ## Project design system
 

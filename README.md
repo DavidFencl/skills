@@ -4,7 +4,7 @@ Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`,
 
 | Skill | Description |
 | --- | --- |
-| [`design-sprint`](skills/design-sprint/SKILL.md) | Focused UI design sprint, run like an arena. Several models (Claude, Codex, Grok, pi models) each build their own variant of a screen or component from your design system as dev-only previews, plus single-property decision options. A local decisions page lets you pick, keep the current version ("Do nothing" is always offered), or re-prompt any variant, and the agent iterates until you submit. |
+| [`design-sprint`](skills/design-sprint/SKILL.md) | Focused UI design sprint, run like an arena. Several models (Claude, Codex, Grok, pi models) build N variants of a screen, a component or a new feature from your design system as dev-only previews, plus single-property decision options. A local decisions page lets you pick, keep the current version ("Do nothing" is always offered), or re-prompt any variant, and the agent iterates until you submit. |
 | [`ui-changelog`](skills/ui-changelog/SKILL.md) | Visual changelog for frontend work. Maps the git diff to the pages and states it touches, captures before/after screenshots of the real app at both refs, at every viewport the change affects, circles what is new or modified, and writes an HTML report plus PR-ready Markdown. It can mock API responses, so screens show realistic data when no safe backend is available. |
 
 ## Install
@@ -18,16 +18,16 @@ The installer symlinks each skill into `~/.claude/skills`, `~/.codex/skills`, `~
 
 ## design-sprint
 
-Invoke it with a screen or component and what to explore. The syntax depends on the harness: `/design-sprint` in Claude Code, `$design-sprint` in Codex, `/skill:design-sprint` in pi, and the skill name in Grok.
+Invoke it with a screen or component and what to explore, or with a feature that does not exist yet (`new feature: bulk invite on the team page, 6 variants`). For a new feature, "Do nothing" means "don't add it", and the decisions appear once you pick a direction. The syntax depends on the harness: `/design-sprint` in Claude Code, `$design-sprint` in Codex, `/skill:design-sprint` in pi, and the skill name in Grok.
 
-- **Variants from several models.** `scripts/lanes.mjs` runs one lane per model in parallel, each through its own CLI in headless mode (`claude -p`, `codex exec`, `grok --prompt-file`, `pi -p`). Each lane writes only its own preview directory. Every lane gets the same brief, so the variants differ by the models' own judgment, as in an arena. A lane that fails is recorded as a dropout, never silently replaced.
+- **Variants from several models.** `scripts/lanes.mjs` runs the lanes in parallel, each through its own CLI in headless mode (`claude -p`, `codex exec`, `grok --prompt-file`, `pi -p`). Each lane writes only its own preview directory. Every lane gets the same brief, so the variants differ by the models' own judgment, as in an arena. When you ask for more variants than there are models, the lanes are spread over the models, and each lane of a model that builds several gets its own angle, shown on its card. A lane that fails is recorded as a dropout, never silently replaced.
 - **Choosing models.** By default there is one lane per installed CLI on its default model. To pin models, write `~/.config/design-sprint/config.json`, or `.design-sprint/config.json` in a project:
 
   ```json
-  { "models": ["claude:opus@high", "codex:gpt-6.1-sol@high", "grok:grok-4.7@high"], "critic": "codex:gpt-6.1-sol@high", "blind": true }
+  { "models": ["claude:opus@high", "codex:gpt-6.1-sol@high", "grok:grok-4.7@high"], "variants": 6, "critic": "codex:gpt-6.1-sol@high", "blind": true }
   ```
 
-  Each entry is `<cli>:<model>[@<effort>]`; an empty model uses that CLI's default. `blind` hides which model made each variant until you submit. `node skills/design-sprint/scripts/lanes.mjs roster` prints the models a sprint will use.
+  Each entry is `<cli>:<model>[@<effort>]`; an empty model uses that CLI's default. `blind` hides which model made each variant until you submit. `variants` sets how many variants the first round builds; the default is one per model. `node skills/design-sprint/scripts/lanes.mjs roster [--variants <n>]` prints the models and lanes a sprint will use.
 - **The decisions page** is served at `http://127.0.0.1:4390/`. Preview files from the sprint directory come from a separate origin on port 4391, so preview code cannot act on the page. Your picks, re-prompts and final answer go to `.design-sprint/<slug>/feedback.jsonl`. The agent waits on that file with `scripts/wait.mjs`, sends each re-prompt back to the model that built that variant, and the open page shows the result within two seconds.
 
 Everything needs only Node. `node --test skills/design-sprint/scripts/*.test.mjs` runs the skill's tests. The formats are in [`references/manifest.md`](skills/design-sprint/references/manifest.md) and [`references/lane-prompt.md`](skills/design-sprint/references/lane-prompt.md).

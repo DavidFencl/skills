@@ -13,7 +13,7 @@ The decisions page renders `.design-sprint/<slug>/sprint.json` and polls it ever
 | `themes` | string[] | Optional theme names. The page offers a theme switch and substitutes `{theme}` in preview URLs. |
 | `blind` | boolean | Hide which model made each variant until the user submits, so brand does not bias the pick. Default `false`; set it from the roster's `blind` setting. |
 | `dropouts` | object[] | Lanes that failed: `{ "id", "model", "reason" }`. Report them; never fill a dropout's slot with another model silently. |
-| `current` | preview | Today's screen. Shown on the direction's "Do nothing" card. |
+| `current` | preview | Today's screen. Shown on the direction's "Do nothing" card. For a new feature, the host screen without the feature, or absent when the feature is a new screen. |
 | `variants` | variant[] | Competing directions for the whole screen or component. |
 | `decisions` | decision[] | Single-property choices. Every option changes one thing. |
 | `requests` | request[] | Your status for each re-prompt, keyed by feedback id. |
@@ -28,18 +28,19 @@ Either one takes an absolute http(s) URL, such as the project's dev server, or a
 - `round`: the round that produced it
 - `basedOn`: the variant it was derived from
 - `prompt`: the user's re-prompt text, shown on the card
+- `angle`: the angle this lane was given when its model built several variants, shown on the card
 - `recommended: true` on at most one variant
 - `retired: true` hides a variant the user asked to replace
 - `model`: the descriptor of the model that built it, e.g. `codex:gpt-6.1-sol@high`, or `self` when you built it yourself
 - `reviews`: second opinions, as a list of `{ "model": "<descriptor>", "text": "<two or three sentences>" }` from models other than the author
 
-**decision**: `id` (`"1"`, `"2"`, ...), `question`, `why`, `recommendation` (an option id), `current` (a preview of today's behaviour) and `options`.
+**decision**: `id` (`"1"`, `"2"`, ...), `question`, `why`, `recommendation` (an option id), `current` (a preview of today's behaviour, or for a new feature the picked variant unchanged) and `options`.
 
 **option**: a preview plus `id` (`"1a"`, `"1b"`, ...), `label` and `recommended`.
 
 **request**: `{ "feedbackId": "<id from feedback.jsonl>", "status": "working" | "done" | "declined", "note": "what you did, or the question you need answered" }`.
 
-**Do nothing** is always available. The page adds a "Do nothing (keep current)" option to the variants and to every decision, using `current` as its preview. To customize it, include your own option with `"keep": true`; the page then uses that option instead of adding one. A keep pick appears in the answer as `Direction: keep current` or `<decision id>: keep`.
+**Do nothing** is always available. The page adds a "Do nothing (keep current)" option to the variants and to every decision, using `current` as its preview. To customize it, include your own option with `"keep": true`; the page then uses that option instead of adding one. A new-feature sprint uses this for a `Don't add it` variant and for `As in <variant id>` decision options. A keep pick appears in the answer as `Direction: keep current` or `<decision id>: keep`.
 
 ## feedback.jsonl
 

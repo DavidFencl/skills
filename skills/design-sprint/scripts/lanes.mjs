@@ -5,7 +5,7 @@
 // An empty model (`codex:`) uses that CLI's own default model. `@<effort>` is read as an effort only
 // when it names a known level, so model ids that contain `@` stay intact.
 //
-//   node lanes.mjs roster [--cwd <project>]           print the models a sprint would use
+//   node lanes.mjs roster [--cwd <project>] [--variants <n>]   print the models and the lanes a sprint would use
 //   node lanes.mjs run --sprint <dir> --plan <file> [--only A,C] [--timeout <seconds>]
 //
 // Node built-ins only.
@@ -84,6 +84,19 @@ export function resolveRoster({ cwd = process.cwd(), home = homedir(), env = pro
 		return { source: project.models ? 'project' : 'global', ...config };
 	}
 	return { source: 'installed', ...config, models: installed().map((cli) => `${cli}:`) };
+}
+
+/**
+ * Spreads `count` lanes over the models in roster order, so a model gets a second lane only after every
+ * model has one. `take` counts a model's lanes; a take above 1 needs its own angle in the brief.
+ */
+export function allocateLanes(models, count = models.length) {
+	if (!Number.isInteger(count) || count < 1 || count > 26) throw new Error(`The variant count must be a whole number from 1 to 26, not ${count}.`);
+	return Array.from({ length: count }, (_, index) => ({
+		id: String.fromCharCode(65 + index),
+		model: models[index % models.length],
+		take: Math.floor(index / models.length) + 1,
+	}));
 }
 
 export function installedClis() {
@@ -244,7 +257,10 @@ function option(args, flag) {
 async function main() {
 	const [command, ...args] = process.argv.slice(2);
 	if (command === 'roster') {
-		console.log(JSON.stringify(resolveRoster({ cwd: resolve(option(args, '--cwd') ?? '.') }), null, 2));
+		const roster = resolveRoster({ cwd: resolve(option(args, '--cwd') ?? '.') });
+		const count = option(args, '--variants') ?? roster.variants;
+		const lanes = roster.models.length ? allocateLanes(roster.models, count === undefined ? roster.models.length : Number(count)) : [];
+		console.log(JSON.stringify({ ...roster, lanes }, null, 2));
 		return;
 	}
 	if (command === 'run') {
@@ -276,7 +292,7 @@ async function main() {
 		process.exitCode = receipts.some((receipt) => receipt.status === 'complete') ? 0 : 1;
 		return;
 	}
-	throw new Error('Usage: node lanes.mjs roster [--cwd <dir>] | run --sprint <dir> --plan <file> [--only A,C] [--timeout <seconds>]');
+	throw new Error('Usage: node lanes.mjs roster [--cwd <dir>] [--variants <n>] | run --sprint <dir> --plan <file> [--only A,C] [--timeout <seconds>]');
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {

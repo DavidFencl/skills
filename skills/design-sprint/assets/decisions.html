@@ -236,7 +236,7 @@ function renderVariants() {
 		]);
 		const card = el('article', { className: 'card' }, [head, previewFor(variant, 560)]);
 		if (variant.prompt) card.append(el('p', { className: 'muted', textContent: `From your request: “${variant.prompt}”` }));
-		for (const [label, text] of [['Intent', variant.intent], ['Trade-offs', variant.tradeoffs], ['', variant.note && !variant.keep ? variant.note : null]]) {
+		for (const [label, text] of [['Angle', variant.angle], ['Intent', variant.intent], ['Trade-offs', variant.tradeoffs], ['', variant.note && !variant.keep ? variant.note : null]]) {
 			if (text) card.append(el('p', {}, [label ? el('strong', { textContent: `${label}: ` }) : null, text]));
 		}
 		for (const review of variant.reviews ?? []) {
