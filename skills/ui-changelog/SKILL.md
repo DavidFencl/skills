@@ -7,7 +7,7 @@ description: Builds a visual changelog of frontend work. Maps the git diff to th
 
 The deliverable is a report directory a reviewer can open and scan:
 
-- `index.html` has one row per location and state, with Before, After and Diff columns, grouped as changed, added, removed, failed and unchanged.
+- `index.html` shows only what changed. Changed rows have Before, After, Circled changes and Diff columns. New and removed UI shows as a single image, and failures show their errors. Shots that came out unchanged are listed by name only.
 - `report.md` holds the same pairs as Markdown tables with relative image paths, ready for `gh --attach`.
 - `results.json` and `shots/` hold the raw data.
 
@@ -21,7 +21,7 @@ Default report location: `${XDG_STATE_HOME:-$HOME/.local/state}/ui-changelog/<re
 
 ## 1. Read the project's rules
 
-The project's instruction files (`AGENTS.md`, `CLAUDE.md`, a run or browser-verify skill) decide how to start servers, which ports and accounts to use, and which data is safe to touch. They override this skill. If a dev server may reach production data, capture only read-only states, never submit writes, and use the project's isolated stack for anything else. Do not restart or reconfigure servers the developer already runs.
+The project's instruction files (`AGENTS.md`, `CLAUDE.md`, a run or browser-verify skill) decide how to start servers, which ports and accounts to use, and which data is safe to touch. They override this skill. If a dev server may reach production data, capture only read-only states, never submit writes, and use the project's isolated stack for anything else. Do not restart or reconfigure servers the developer already runs. If the project forbids ad-hoc browser scripts, `capture.mjs` counts as one. Tell the user, and run it only with their go-ahead, against isolated or fully mocked targets.
 
 ## 2. Pick the two refs
 
@@ -58,7 +58,13 @@ Add one control shot the diff should not affect. When the app shell changed, the
 2. **Before.** Run `git worktree add --detach <before-dir> <before-ref>`, where `<before-dir>` is a fresh temporary directory outside the repository, such as `$(mktemp -d)/before`. Install dependencies the project's way with a frozen lockfile, and start the same dev command.
 3. **Ports.** Use two free, non-default ports. Pass `--port <n> --strictPort --host 127.0.0.1` to Vite and the equivalent elsewhere, and put the URL each server prints into the manifest. Vite binds `localhost`, which may be IPv6 only, so without `--host` a `127.0.0.1` URL can be refused. Set any API base URL or CORS variables the project requires for an agent-started frontend.
 4. **Same inputs.** Point both sides at the same backend, data, account, feature flags and env, so the frontend code is the only variable. When the diff also changes the API, run each side against its own backend only if the project's rules allow it. Otherwise say in the report that before shots run against the new API.
-5. **Fidelity.** Capture real app routes. Use a story or harness only when no route renders the component, and add `(story)` to the label. Never inject CSS or edit the DOM to imitate a change. Stubbing API responses is acceptable when the project allows it.
+5. **Fidelity.** Capture real app routes. Use a story or harness only when no route renders the component, and add `(story)` to the label. Never inject CSS or edit the DOM to imitate a change.
+6. **Mock the API when no safe backend exists.** Point the frontend's API URL at a closed loopback port, set `"allowHosts": []`, and answer the calls with `mocks` (see the manifest reference). Nothing then leaves the machine, and the screens show realistic data instead of skeletons and error toasts.
+   - Run the capture once without mocks. Each shot prints `unanswered API calls`, which is the list to mock.
+   - Build response bodies from the project's DTO types, with plausible fictional data and never real users' data.
+   - Mock the states the change shows. Use `status` for errors, `pending` for loading, an empty list for empty states, and per-shot `mocks` for each variant.
+   - Pin mock URLs to the API origin, such as `http://127.0.0.1:4399/api/**`. A bare `**/api/**` also matches dev-server source modules like `/src/app/api/user.api.ts` and breaks the app.
+   - Both sides get the same mocks, so any difference comes from the frontend code.
 
 ## 5. Write the manifest and capture
 
@@ -87,11 +93,11 @@ node <skill-dir>/scripts/capture.mjs <manifest.json> --out <report-dir>
 
 When pages need a login, follow the project's account rules. If the user should log in themselves, run `node <skill-dir>/scripts/capture.mjs login <after-baseURL> <state.json>`. It opens a browser, and the session is saved when they close the window. Set `storageState` to that file. The state file is a credential, so keep it outside every repository and delete it when done.
 
-Make the pairs comparable. Use the same viewport, theme, locale and timezone on both sides, `fixedTime` for relative dates, `mask` for clocks, avatars, random IDs and live maps, and `waitForHidden` for spinners. Prefer element shots with `padding` over full pages, so a reader sees the change and enough context to place it.
+Make the pairs comparable. Use the same viewport, theme, locale and timezone on both sides, `fixedTime` for relative dates, `mask` for clocks, avatars, random IDs and live maps, `hide` for toasts and dev overlays, and `waitForHidden` for spinners. Build-time values such as the app version or commit hash differ between the worktree and the checkout. Use `hide` for them, because a mask takes the element's size and the strings differ in length. Prefer element shots with `padding` over full pages, so a reader sees the change and enough context to place it.
 
 ## 6. Check every pair before handing over
 
-Open the changed, added and removed images and look at them.
+Open the changed, added and removed images and look at them. The circled image outlines what is new or modified on the after side. Content that only moved, for example pushed down by an inserted element, is not circled. The diff image marks every differing pixel, moved content included. A circled region you cannot explain is either noise to mask or a real side effect of the change worth reporting.
 
 | Result | Action |
 | --- | --- |
@@ -100,7 +106,7 @@ Open the changed, added and removed images and look at them.
 | `failed` | Fix the selector or steps. If the state is unreachable, keep the row and give the reason. |
 | `added` | The shot is marked `new`. Confirm the after image shows the new UI. |
 
-Recapture only the fixed shots with `--only <id>,<id>`. Results merge into the existing report. `capture.mjs report --out <dir>` re-renders the HTML and Markdown without capturing.
+Recapture only the fixed shots with `--only <id>,<id>`. Results merge into the existing report. A side that fails is retried once automatically, which absorbs dev-server reloads. `capture.mjs compare --out <dir>` re-diffs the existing PNGs without a browser, and `capture.mjs report --out <dir>` only re-renders the HTML and Markdown.
 
 ## 7. Hand over and clean up
 
