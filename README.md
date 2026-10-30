@@ -17,6 +17,11 @@ The [`skill-thinking`](pi/extensions/skill-thinking.ts) extension ties it togeth
 | [`plan`](pi/skills/plan/SKILL.md) | Senior Software Architect / Planner & QA Agent. Discovers the codebase (including your design system: styling approach, component library, design tokens), grills you with 3–5 questions at a time, drafts a `PLAN-<feature>.md` of sequential atomic steps with baseline/verification commands, and runs an automated audit pass. |
 | [`implement`](pi/skills/implement/SKILL.md) | Test-Driven Executor Agent. Executes one step, runs the baseline check before editing and the verification command after, stays strictly within the step's files, flips the step's status to `done`, and logs post-mortem learnings to `.pi/learnings.md`. |
 | [`review`](pi/skills/review/SKILL.md) | Holistic reviewer & design guardian. Checks the finished feature against the plan and your existing UI patterns, runs full typecheck/lint/tests, then appends an `APPROVE` verdict or adds `F1..Fn` fix steps to the plan. |
+| [`design-sprint`](pi/skills/design-sprint/SKILL.md) | Focused UI design sprint. Builds 2–4 distinct variants of a screen or component, plus single-property decision options, from your own design system as dev-only previews. Opens a local decisions page where you pick, keep the current version ("Do nothing" is always offered) or re-prompt any variant, and iterates until you submit. |
+
+### Design sprint
+
+`/skill:design-sprint <screen or component> [what to explore]` serves a decisions page at `http://127.0.0.1:4390/`. Your picks, re-prompts and final answer are written to `.design-sprint/<slug>/feedback.jsonl`. The agent waits on that file with `scripts/wait.mjs`, adds new variants for each re-prompt, and the open page shows them within two seconds. The page and server need only Node; `node --test pi/skills/design-sprint/scripts/design-sprint.test.mjs` runs the skill's tests. The manifest format is in [`references/manifest.md`](pi/skills/design-sprint/references/manifest.md).
 
 ### Extensions
 
