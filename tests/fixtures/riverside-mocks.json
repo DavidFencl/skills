@@ -1,0 +1,10 @@
+[
+  { "url": "http://127.0.0.1:47097/api/events/upcoming", "json": { "items": [
+    { "id": "run-101", "title": "Riverside 5K Social", "startsAt": "2026-11-04T17:30:00Z", "city": "Ghent", "distanceKm": 5, "difficulty": "easy", "spotsLeft": 18, "isFull": false },
+    { "id": "run-102", "title": "Hill Repeats at Citadel Park", "startsAt": "2026-11-06T06:45:00Z", "city": "Ghent", "distanceKm": 9.5, "difficulty": "hard", "spotsLeft": 0, "isFull": true },
+    { "id": "run-103", "title": "Sunday Long Run to Lochristi", "startsAt": "2026-11-08T08:00:00Z", "city": "Lochristi", "distanceKm": 21, "difficulty": "moderate", "spotsLeft": 7, "isFull": false }
+  ], "total": 3, "page": 0, "pageSize": 3 } },
+  { "url": "http://127.0.0.1:47097/api/stats/club", "json": { "memberCount": 1284, "eventsThisYear": 146, "kilometersRun": 38210, "countryCount": 9 } },
+  { "url": "http://127.0.0.1:47097/api/graphql", "method": "POST", "graphql": "Viewer", "json": { "data": { "viewer": { "id": "u-1", "displayName": "Maria Jensen", "avatarUrl": "https://cdn.riverside-run.example/avatars/u-1.jpg", "memberSince": "2021-03-14" } } } },
+  { "websocket": "ws://127.0.0.1:47097/api/live", "send": [{ "type": "presence", "online": 42 }] }
+]

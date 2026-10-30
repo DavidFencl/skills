@@ -1,0 +1,7 @@
+{
+  "title": "A WebSocket to the frontend's own host passes the allowHosts guard",
+  "before": { "baseURL": "http://127.0.0.1:47045" },
+  "after": { "baseURL": "http://127.0.0.1:47046" },
+  "allowHosts": [],
+  "shots": [{ "id": "own-host-socket", "path": "/", "expect": "unchanged", "steps": [{ "waitFor": "#out:has-text('echo: server got ping')" }] }]
+}

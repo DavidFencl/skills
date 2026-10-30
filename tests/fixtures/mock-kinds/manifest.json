@@ -1,0 +1,52 @@
+{
+  "title": "Mock kinds (same page on both sides)",
+  "before": { "baseURL": "http://127.0.0.1:47020", "ref": "fixture" },
+  "after": { "baseURL": "http://127.0.0.1:47021", "ref": "fixture" },
+  "allowHosts": [],
+  "placeholderImages": true,
+  "networkIdleTimeoutMs": 20000,
+  "initScripts": [{ "content": "window.__UI_CHANGELOG_INIT__ = 'from init script';" }],
+  "shots": [
+    {
+      "id": "mocks",
+      "label": "Every mock kind",
+      "path": "/?scenario=mocks",
+      "expect": "unchanged",
+      "mocks": [
+        { "url": "**/api/**", "json": { "label": "broad catch-all", "data": { "a": "wrong", "b": "wrong" } } },
+        { "url": "http://127.0.0.1:47098/api/items", "query": { "page": "1" }, "json": { "label": "page one" } },
+        { "url": "http://127.0.0.1:47098/api/items", "query": { "page": "2" }, "json": { "label": "page two" } },
+        { "url": "http://127.0.0.1:47098/api/graphql", "method": "POST", "graphql": "First", "json": { "data": { "a": "answer A" } } },
+        { "url": "http://127.0.0.1:47098/api/graphql", "method": "POST", "graphql": "Second", "json": { "data": { "b": "answer B" } } },
+        { "url": "http://127.0.0.1:47098/api/notes", "handler": "handlers.mjs#notes" },
+        { "url": "http://127.0.0.1:47098/api/stream", "sse": [{ "event": "tick", "data": { "n": 1 } }, { "event": "tick", "data": { "n": 3 } }] },
+        { "url": "http://127.0.0.1:47098/api/slow", "pending": true },
+        { "websocket": "ws://127.0.0.1:47098/api/live", "send": ["welcome"], "onMessage": [{ "match": { "type": "subscribe" }, "send": [{ "online": 7 }] }] }
+      ],
+      "steps": [
+        { "waitFor": "#module:has-text('module ok')" },
+        { "waitFor": "#query:has-text('page two')" },
+        { "waitFor": "#gqlA:has-text('answer A')" },
+        { "waitFor": "#gqlB:has-text('answer B')" },
+        { "waitFor": "#stateful:has-text('hello')" },
+        { "waitFor": "#sse:has-text('tick 3')" },
+        { "waitFor": "#ws:has-text('welcome {\"online\":7}')" },
+        { "waitFor": "#pending:has-text('loading')" },
+        { "waitFor": "#init:has-text('from init script')" }
+      ]
+    },
+    {
+      "id": "guards",
+      "label": "Network guards and page errors",
+      "path": "/?scenario=guards",
+      "expect": "unchanged",
+      "steps": [
+        { "waitFor": "#thirdparty:has-text('blocked')" },
+        { "waitFor": "#thirdws:has-text('closed')" },
+        { "waitFor": "#imgstate:has-text('loaded')" },
+        { "waitFor": "#fallback:has-text('html')" },
+        { "waitFor": "#sw:has-text('not controlling')" }
+      ]
+    }
+  ]
+}

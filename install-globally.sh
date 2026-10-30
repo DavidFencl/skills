@@ -3,10 +3,10 @@
 # install-globally.sh: symlink every skill in skills/ into the skill folder of each agent
 # harness installed on this machine, so updates to this repo apply everywhere.
 #
-#   Claude Code  ~/.claude/skills/
-#   Codex        ~/.codex/skills/
-#   pi           ~/.pi/agent/skills/
-#   Grok         ~/.grok/skills/
+#   Claude Code  ${CLAUDE_CONFIG_DIR:-~/.claude}/skills/
+#   Codex        ${CODEX_HOME:-~/.codex}/skills/
+#   pi           ${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills/
+#   Grok         ${GROK_HOME:-~/.grok}/skills/
 #
 # A harness is skipped when its config directory does not exist. Safe to re-run. A destination
 # that already exists as a real directory (not a symlink) is left untouched. Runs on bash 3.2
@@ -38,8 +38,14 @@ harness_name() {
     grok) echo "Grok" ;;
   esac
 }
+# Each harness's own override variable wins over its default directory.
 harness_root() {
-  if [ "$1" = pi ]; then echo "${HOME}/.pi/agent"; else echo "${HOME}/.$1"; fi
+  case "$1" in
+    claude) echo "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}" ;;
+    codex) echo "${CODEX_HOME:-${HOME}/.codex}" ;;
+    pi) echo "${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}" ;;
+    grok) echo "${GROK_HOME:-${HOME}/.grok}" ;;
+  esac
 }
 
 for harness in claude codex pi grok; do

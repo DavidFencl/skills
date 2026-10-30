@@ -1,14 +1,24 @@
 #!/usr/bin/env node
 // Maps a git diff to the UI entry points (pages, routes, layouts) that render the changed files.
-// Usage: node affected.mjs [--base <ref>] [--scope <dir>]... [--entry <regex>]... [--max-entries <n>] [--markdown]
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import path from 'node:path';
 
+const USAGE = `Usage: node affected.mjs [--base <ref>] [--scope <dir>]... [--entry <regex>]... [--max-entries <n>] [--markdown | --manifest]
+  Run inside the repository under review. Without --base: HEAD when the tree is dirty, else the
+  merge-base with origin/HEAD. --scope limits the analysis to frontend paths. --entry replaces the
+  built-in entry patterns. Output: JSON with import chains and route hints (default), a Markdown
+  summary (--markdown), or a capture manifest skeleton to fill in (--manifest).`;
+if (process.argv.includes('--help') || process.argv.includes('-h')) {
+  console.log(USAGE);
+  process.exit(0);
+}
+// Read-only git: no index refresh or lock files in the repository under review.
+const GIT_ENV = { ...process.env, GIT_OPTIONAL_LOCKS: '0' };
 const args = parseArgs(process.argv.slice(2));
 const root = (() => {
   try {
-    return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: GIT_ENV }).trim();
   } catch {
     console.error('affected.mjs must run inside the git repository under review.');
     process.exit(1);
@@ -36,7 +46,7 @@ const ENTRY_PATTERNS = [
 ];
 const ROUTER_PATTERN = /(^|\/)(router|routes|app-routes|routing)\.[cm]?[jt]sx?$/;
 const CUSTOM_ENTRY_PATTERNS = [].concat(args.entry ?? []).map((source) => new RegExp(source));
-const SHELL_PATTERN = /(^|\/)(main|index|app|root|_app|_document|layout|shell)\.[cm]?[jt]sx?$/i;
+const SHELL_PATTERN = /(^|\/)((main|index|app|root|_app|_document|layout|shell)\.[cm]?[jt]sx?|(index|app)\.html)$/i;
 const TEST_PATTERN = /(\.|\/)(spec|test|stories|story|e2e|cy)(\.|\/)|(^|\/)(__tests__|__mocks__|e2e|test|tests|cypress|playwright)\//;
 const LOCALE_PATTERN = /(^|\/)(locales?|i18n|lang|translations?|messages)(\/|\.)/;
 const THEME_PATTERN = /(^|\/)(theme|tokens?|design-tokens|tailwind\.config|global(s)?\.(s?css|less)|index\.(s?css|less)|variables\.(s?css|less))/;
@@ -45,6 +55,7 @@ const changed = changedFiles();
 const files = walk(root);
 const resolver = createResolver(files);
 const importers = buildReverseGraph(files, resolver);
+const framework = detectFramework();
 
 const breakpoints = readBreakpoints(files);
 const classified = changed.map(classify);
@@ -62,6 +73,7 @@ if (scopes.length && report.files.every((file) => file.kind === 'out-of-scope'))
   console.error(`No changed files under ${scopes.join(', ')} (paths are resolved from the current directory, then the repo root).`);
 }
 if (args.markdown) printMarkdown(report);
+else if (args.manifest) process.stdout.write(`${JSON.stringify(manifestSkeleton(report), null, 2)}\n`);
 else process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 
 function classify({ path: rel, status }) {
@@ -90,7 +102,7 @@ function classify({ path: rel, status }) {
     result.sampleEntries = entries.slice(0, 5);
   } else {
     result.scope = entries.length ? 'scoped' : roots.length && roots.every(({ root: top }) => SHELL_PATTERN.test(top)) ? 'shell' : 'unreached';
-    result.entries = entries;
+    result.entries = entries.map((entry) => ({ ...entry, route: routeHint(entry.entry) }));
   }
   if (!entries.length && roots.length) result.roots = roots.slice(0, maxEntries);
   const responsive = responsiveSignals(rel, status);
@@ -220,6 +232,7 @@ function buildReverseGraph(allFiles, resolve) {
     /new\s+URL\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url/g,
     /@(?:import|use|forward)\s+(?:url\()?\s*['"]([^'"]+)['"]/g,
     /url\(\s*['"]?([^'")]+?\.(?:svg|png|jpe?g|gif|webp|avif|woff2?|ttf|otf))['"]?\s*\)/g,
+    /<(?:script|link|img)\b[^>]*?\s(?:src|href)\s*=\s*['"]([^'"]+)['"]/g,
   ];
   for (const file of allFiles) {
     const ext = path.extname(file);
@@ -262,7 +275,8 @@ function createResolver(allFiles) {
     if (!spec || /^(https?:|data:|node:)/.test(spec)) return null;
     const fromDir = path.join(root, path.dirname(fromFile));
     if (spec.startsWith('.')) return tryFile(path.resolve(fromDir, spec));
-    if (spec.startsWith('/')) return tryFile(path.join(root, spec)) ?? tryFile(path.join(nearestDir(fromFile, 'public') ?? root, spec));
+    // "/src/main.tsx" in an app's index.html is relative to that app's folder (the dev server's root).
+    if (spec.startsWith('/')) return tryFile(path.join(fromDir, spec)) ?? tryFile(path.join(root, spec)) ?? tryFile(path.join(nearestDir(fromFile, 'public') ?? root, spec));
 
     for (const { prefix, suffix, exact, targets } of aliases) {
       if (exact ? spec !== prefix : !spec.startsWith(prefix) || !spec.endsWith(suffix) || spec.length < prefix.length + suffix.length) continue;
@@ -384,15 +398,159 @@ function dirty() {
 }
 
 function git(gitArgs) {
-  return execFileSync('git', gitArgs, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+  return execFileSync('git', gitArgs, { cwd: root, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, env: GIT_ENV });
 }
 
 function tryGit(gitArgs) {
   try {
-    return execFileSync('git', gitArgs, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    return execFileSync('git', gitArgs, { cwd: root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: GIT_ENV });
   } catch {
     return null;
   }
+}
+
+// File-system routers derive the URL from the file path; detect them from the project's dependencies.
+function detectFramework() {
+  const deps = new Set();
+  for (const file of files.filter((name) => name.endsWith('package.json'))) {
+    try {
+      const pkg = JSON.parse(readFileSync(path.join(root, file), 'utf8'));
+      for (const name of Object.keys({ ...pkg.dependencies, ...pkg.devDependencies })) deps.add(name);
+    } catch {
+      // Not every package.json parses (templates, fixtures); ignore those.
+    }
+  }
+  if (deps.has('next')) return 'next';
+  if (deps.has('@sveltejs/kit')) return 'sveltekit';
+  if (deps.has('nuxt')) return 'nuxt';
+  if (deps.has('astro')) return 'astro';
+  if ([...deps].some((name) => name.startsWith('@remix-run/')) || deps.has('@react-router/dev')) return 'remix';
+  return null;
+}
+
+// Where an entry renders: from the file path under a file-system router, otherwise from the
+// route config that imports it (the nearest `path` above each use, joined with its parents'
+// paths by indentation). A hint to verify, not a guarantee.
+function routeHint(entry) {
+  const fromFile = fileRoute(entry);
+  if (fromFile) return { path: fromFile, from: `${framework} file route` };
+  for (const file of [...(importers.get(entry) ?? [])].filter((candidate) => !TEST_PATTERN.test(candidate))) {
+    let text;
+    try {
+      text = readFileSync(path.join(root, file), 'utf8');
+    } catch {
+      continue;
+    }
+    if (!/\bpath\s*[:=]/.test(text)) continue;
+    const lines = text.split('\n');
+    const uses = [];
+    for (const match of text.matchAll(/import\s+(?:(\w+)\s*,?\s*)?(?:\{([^}]*)\})?\s*from\s*['"]([^'"]+)['"]/g)) {
+      if (resolver(match[3], file) !== entry) continue;
+      const names = [match[1], ...(match[2] ?? '').split(',').map((name) => name.trim().split(/\s+as\s+/).pop())].filter(Boolean);
+      for (const name of names) {
+        const use = new RegExp(`<${name}\\b|\\b(?:element|component|Component|default)\\s*[:=]\\s*\\{?\\s*<?${name}\\b`);
+        lines.forEach((line, index) => use.test(line) && uses.push(index));
+      }
+    }
+    for (const match of text.matchAll(/import\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+      if (resolver(match[1], file) === entry) uses.push(text.slice(0, match.index).split('\n').length - 1);
+    }
+    for (const index of uses) {
+      const route = pathAbove(lines, index);
+      if (route !== null) return { path: route, from: `${file}:${index + 1}` };
+    }
+  }
+  return null;
+}
+
+function pathAbove(lines, start) {
+  const indent = (line) => line.match(/^\s*/)[0].length;
+  const pathOf = (line) => line.match(/\bpath\s*[:=]\s*\{?\s*['"`]([^'"`]*)['"`]/)?.[1] ?? (/\bindex\s*(:\s*true|[\s/>])/.test(line) ? '' : null);
+  const segments = [];
+  const taken = new Set();
+  let level = indent(lines[start]);
+  for (let index = start; index >= 0 && start - index < 600; index--) {
+    const line = lines[index];
+    if (!line.trim()) continue;
+    const depth = indent(line);
+    if (depth > level) continue;
+    if (depth < level) level = depth;
+    const segment = pathOf(line);
+    if (segment !== null && !taken.has(level)) {
+      segments.push(segment);
+      taken.add(level);
+    }
+    if (level === 0) break;
+  }
+  if (!segments.length) return null;
+  const joined = segments.reverse().join('/').replace(/\/{2,}/g, '/').replace(/^\/?/, '/');
+  return joined.length > 1 ? joined.replace(/\/$/, '') : '/';
+}
+
+function fileRoute(entry) {
+  const clean = (segments) => `/${segments.filter((segment) => segment && !/^\(.*\)$/.test(segment) && !segment.startsWith('@')).join('/')}`.replace(/\/index$/, '') || '/';
+  const after = (marker) => {
+    const index = entry.lastIndexOf(`/${marker}/`);
+    const start = index === -1 ? (entry.startsWith(`${marker}/`) ? marker.length + 1 : -1) : index + marker.length + 2;
+    return start === -1 ? null : entry.slice(start);
+  };
+  const strip = (rel) => rel.replace(/\.[^./]+$/, '');
+  if (framework === 'next') {
+    const app = after('app');
+    if (app && /(^|\/)page\.[jt]sx?$/.test(app)) return clean(app.split('/').slice(0, -1));
+    const pages = after('pages');
+    if (pages && !/(^|\/)_(app|document|error)\./.test(pages)) return clean(strip(pages).split('/'));
+  }
+  if (framework === 'sveltekit') {
+    const routes = after('routes');
+    if (routes && /\+page\.svelte$/.test(routes)) return clean(routes.split('/').slice(0, -1));
+  }
+  if (framework === 'nuxt' || framework === 'astro') {
+    const pages = after('pages');
+    if (pages) return clean(strip(pages).split('/'));
+  }
+  if (framework === 'remix') {
+    const routes = after('routes');
+    if (routes && !routes.includes('/')) return clean(strip(routes).split('.').map((segment) => (segment === '_index' ? '' : segment.startsWith('_') ? '' : segment.replace(/^\$/, ':'))));
+  }
+  return null;
+}
+
+// A capture manifest to fill in: every changed UI file is listed for coverage, each entry gets a
+// shot stub with its route hint, and TODO marks every value only a person or agent can decide.
+function manifestSkeleton({ base, baseCommit, viewports, files: rows }) {
+  const ui = rows.filter((row) => !['test', 'non-ui', 'out-of-scope'].includes(row.kind) && row.status !== 'D');
+  const byEntry = new Map();
+  for (const row of ui.filter((candidate) => candidate.scope === 'scoped')) {
+    for (const { entry, route } of row.entries) {
+      const shot = byEntry.get(entry) ?? { id: slugify(path.basename(entry).replace(/\.[^.]+$/, '').replace(/\.(page|route|view|screen|layout)$/, '')), label: `${humanize(entry)}, TODO state`, path: route?.path ?? 'TODO', sources: [], expect: 'changed' };
+      shot.sources.push(row.path);
+      byEntry.set(entry, shot);
+    }
+  }
+  const shots = [...byEntry.values()];
+  for (const row of ui.filter((candidate) => candidate.scope === 'shell')) shots.push({ id: `shell-${slugify(path.basename(row.path))}`, label: `App shell (${path.basename(row.path)}), TODO page and state`, path: '/', sources: [row.path], expect: 'changed' });
+  for (const row of ui.filter((candidate) => candidate.scope === 'global')) shots.push({ id: `global-${slugify(path.basename(row.path))}`, label: `TODO a screen that uses ${path.basename(row.path)}`, path: 'TODO', sources: [row.path], expect: 'changed' });
+  shots.push({ id: 'control', label: 'TODO a page this diff should not affect (control)', path: 'TODO', expect: 'unchanged' });
+  const named = new Set(['mobile', 'desktop']);
+  return {
+    title: `TODO change name (working tree vs ${base === 'HEAD' ? 'HEAD' : base.slice(0, 10)})`,
+    before: { baseURL: 'TODO http://127.0.0.1:port', ref: `${base === 'HEAD' ? 'HEAD' : base.slice(0, 10)} ${baseCommit.slice(0, 7)}`, dir: 'TODO before worktree path' },
+    after: { baseURL: 'TODO http://127.0.0.1:port', ref: 'working tree', dir: root },
+    ...(viewports.length ? { viewports: viewports.map((viewport) => (named.has(viewport.name) ? viewport.name : { name: viewport.name, width: viewport.width, height: viewport.height })) } : {}),
+    changedFiles: ui.map((row) => row.path),
+    notCaptured: ui.filter((row) => row.scope === 'unreached').map((row) => ({ file: row.path, reason: 'TODO unreached: read the file, then add a shot or a reason' })),
+    shots,
+  };
+}
+
+function slugify(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+}
+
+function humanize(file) {
+  const name = path.basename(file).replace(/\.[^.]+$/, '').replace(/\.(page|route|view|screen|layout)$/, '').replace(/[-_.]+/g, ' ');
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 function parseArgs(argv) {
@@ -420,7 +578,7 @@ function printMarkdown({ base, baseCommit, after, viewports, files: rows }) {
     lines.push('## Scoped (capture these entries)');
     for (const row of groups.scoped) {
       lines.push(`- \`${row.path}\` (${row.kind}, ${row.status})`);
-      for (const { entry, chain } of row.entries) lines.push(`  - \`${entry}\`${chain.length > 2 ? ` via ${chain.slice(1, -1).map((step) => `\`${path.basename(step)}\``).join(' → ')}` : ''}`);
+      for (const { entry, chain, route } of row.entries) lines.push(`  - \`${entry}\`${route ? ` at \`${route.path}\` (${route.from})` : ''}${chain.length > 2 ? ` via ${chain.slice(1, -1).map((step) => `\`${path.basename(step)}\``).join(' → ')}` : ''}`);
     }
   }
   if (groups.shell.length) {
