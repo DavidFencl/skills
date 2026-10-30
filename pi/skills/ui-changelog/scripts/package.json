@@ -1,0 +1,10 @@
+{
+  "name": "ui-changelog-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "pixelmatch": "^8.0.0",
+    "playwright": "^1.64.0",
+    "pngjs": "^7.0.0"
+  }
+}

@@ -17,6 +17,7 @@ The [`skill-thinking`](pi/extensions/skill-thinking.ts) extension ties it togeth
 | [`plan`](pi/skills/plan/SKILL.md) | Senior Software Architect / Planner & QA Agent. Discovers the codebase (including your design system: styling approach, component library, design tokens), grills you with 3–5 questions at a time, drafts a `PLAN-<feature>.md` of sequential atomic steps with baseline/verification commands, and runs an automated audit pass. |
 | [`implement`](pi/skills/implement/SKILL.md) | Test-Driven Executor Agent. Executes one step, runs the baseline check before editing and the verification command after, stays strictly within the step's files, flips the step's status to `done`, and logs post-mortem learnings to `.pi/learnings.md`. |
 | [`review`](pi/skills/review/SKILL.md) | Holistic reviewer & design guardian. Checks the finished feature against the plan and your existing UI patterns, runs full typecheck/lint/tests, then appends an `APPROVE` verdict or adds `F1..Fn` fix steps to the plan. |
+| [`ui-changelog`](pi/skills/ui-changelog/SKILL.md) | Visual changelog for frontend work. Maps the git diff to the pages and states it touches, captures before/after screenshots of the real app at both refs, pixel-diffs each pair, and writes an HTML report plus PR-ready Markdown. Standalone and harness-neutral (pi, Claude Code, Codex). Playwright is installed into `~/.cache/ui-changelog` by its `setup.sh`, never into your project. |
 
 ### Extensions
 
@@ -193,8 +194,12 @@ The extension offers this automatically when the last step completes. The review
 │       │   └── SKILL.md
 │       ├── plan/
 │       │   └── SKILL.md
-│       └── review/
-│           └── SKILL.md
+│       ├── review/
+│       │   └── SKILL.md
+│       └── ui-changelog/
+│           ├── SKILL.md
+│           ├── references/manifest.md
+│           └── scripts/            (affected.mjs, capture.mjs, setup.sh, package.json)
 └── README.md
 ```
 
