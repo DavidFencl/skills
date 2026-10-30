@@ -18,7 +18,11 @@ The decisions page renders `.design-sprint/<slug>/sprint.json` and polls it ever
 | `decisions` | decision[] | Single-property choices. Every option changes one thing. |
 | `requests` | request[] | Your status for each re-prompt, keyed by feedback id. |
 
-**preview**: `{ "url": "...", "image": "...", "note": "...", "height": 560 }`. Give `url` (rendered in a scaled iframe; `{theme}` and `{width}` are substituted) or `image` (a path relative to the sprint directory, served at `/files/...`, or an absolute URL). `note` is shown under it.
+**preview**: `{ "url": "...", "image": "...", "note": "...", "height": 560 }`. `note` is shown under the preview. Give one of:
+- `url`, rendered in a scaled, sandboxed iframe, with `{theme}` and `{width}` substituted;
+- `image`.
+
+Either one takes an absolute http(s) URL, such as the project's dev server, or a path without a scheme. A path names a file in the sprint directory and is loaded from the separate preview origin that `serve.mjs` runs. Other schemes, such as `javascript:` or `data:`, are refused.
 
 **variant**: a preview plus `id` (`"A"`, `"B"`, ...), `label`, `intent`, `tradeoffs`, and optionally:
 - `round`: the round that produced it

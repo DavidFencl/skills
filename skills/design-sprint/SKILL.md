@@ -61,7 +61,7 @@ Previews are development-only artifacts that never ship:
 | Vite | An extra root HTML entry (Vite serves it in dev and builds only `index.html`), loaded through `if (import.meta.env.DEV) await import(...)` |
 | Next.js | A route under a dev-only segment that calls `notFound()` when `process.env.NODE_ENV === 'production'` |
 | Storybook present | Stories under a `Design sprint/` title |
-| Anything else | Static HTML inside `.design-sprint/<slug>/`, served by `serve.mjs` at `/files/...` |
+| Anything else | Static HTML inside `.design-sprint/<slug>/`, served by `serve.mjs` on its separate preview port |
 
 Build in this order:
 
@@ -76,7 +76,12 @@ Build in this order:
 4. **Run all lanes in parallel** with `node <skill-dir>/scripts/lanes.mjs run --sprint .design-sprint/<slug> --plan .design-sprint/<slug>/lanes.json`. Run it in the background if your harness limits foreground commands; lanes take minutes.
    - Each lane writes `lanes/<id>.receipt.json`, plus its stdout, stderr and last message.
    - A `dropout` receipt names the reason. Record it in `dropouts`, continue with the rest, and tell the user. Never fill its slot with another model silently.
-   - **Isolation differs by CLI.** Codex and Grok lanes run in their CLIs' workspace sandboxes. Claude lanes may only edit files, with no shell. pi lanes lose the shell, but pi has no sandbox, so a pi lane could still write outside the project. Use pi lanes only on a machine and project you trust them with.
+   - **Isolation differs by CLI:**
+     - **Claude** lanes run `--restricted`: no code-running tools, no user or project settings, no MCP servers, and file tools confined to the project.
+     - **Codex and Grok** lanes run in their CLIs' workspace sandboxes. MCP servers configured for those CLIs still load and run outside the sandbox.
+     - **pi** lanes lose the shell and MCP, but pi has no sandbox, so a pi lane could still write outside the project.
+
+     Use Codex, Grok and pi lanes only on a machine and project you trust them with.
    - **Outside changes.** The run compares git's view of changed files before and after. It writes every path changed outside all lanes' `owns` paths and the sprint directory to `lanes/outside-changes.json`. Lanes share one checkout, so such a change cannot be attributed to a lane, and it may be the user's own work. Never revert it. List it for the user and ask what to do.
 5. **Review every completed lane's work yourself:**
    - read the files under its `owns` paths;
@@ -96,7 +101,7 @@ Build in this order:
    - Set `blind` from the config. Default to `true` when lanes come from different vendors, so brand does not sway the pick. The page reveals the models after submit.
 2. Capture today's screen for `current`, either as a URL or as a screenshot saved in the sprint directory.
 3. Start the project's dev server on a non-default port. Never take over a server the user is already running.
-4. In the background, run `node <skill-dir>/scripts/serve.mjs --sprint .design-sprint/<slug> --port 4390`.
+4. In the background, run `node <skill-dir>/scripts/serve.mjs --sprint .design-sprint/<slug> --port 4390`. It also serves the sprint directory's preview files on port 4391 (`--files-port`), a separate origin, so preview code can never act on the decisions page.
 5. Open `http://127.0.0.1:4390/` for the user (`xdg-open` on Linux, `open` on macOS) and give them the URL.
 6. Tell them:
    - **pick:** pick a direction and one option per decision, where "Do nothing" counts;

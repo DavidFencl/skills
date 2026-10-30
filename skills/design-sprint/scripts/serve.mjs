@@ -2,7 +2,9 @@
 // Serves the design-sprint decisions page for one sprint directory and records the user's
 // picks, re-prompts and final answer to <sprint>/feedback.jsonl. Node built-ins only.
 //
-//   node serve.mjs --sprint .design-sprint/<slug> [--port 4390]
+//   node serve.mjs --sprint .design-sprint/<slug> [--port 4390] [--files-port 4391]
+//
+// The page and its API run on --port; preview files run on --files-port, a separate origin.
 
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
@@ -120,18 +122,31 @@ export function resolveSprintFile(root, requestPath) {
 	return { status: 200, file: real };
 }
 
-export function createSprintServer(sprintDir) {
+function parseTarget(req) {
+	try {
+		return new URL(req.url ?? '/', 'http://localhost');
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * The decisions page and its API. Preview files are not served here: they come from the files server
+ * on another port, so preview code never shares the page's origin and cannot drive the page.
+ */
+export function createSprintServer(sprintDir, { filesOrigin } = {}) {
 	const root = resolve(sprintDir);
 	const server = createServer(async (req, res) => {
 		try {
-			let url;
-			try {
-				url = new URL(req.url ?? '/', 'http://localhost');
-			} catch {
-				return send(res, 400, { error: 'Malformed request target.' });
-			}
+			const url = parseTarget(req);
+			if (!url) return send(res, 400, { error: 'Malformed request target.' });
 			if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/index.html')) {
+				res.setHeader('content-security-policy', "frame-ancestors 'none'");
+				res.setHeader('x-frame-options', 'DENY');
 				return send(res, 200, readFileSync(PAGE), MIME['.html']);
+			}
+			if (req.method === 'GET' && url.pathname === '/api/config') {
+				return send(res, 200, { filesOrigin: filesOrigin ?? null });
 			}
 			if (req.method === 'GET' && url.pathname === '/api/sprint') {
 				const manifest = join(root, 'sprint.json');
@@ -155,17 +170,6 @@ export function createSprintServer(sprintDir) {
 				appendFileSync(join(root, 'feedback.jsonl'), `${JSON.stringify(record)}\n`);
 				return send(res, 201, record);
 			}
-			if (req.method === 'GET' && url.pathname.startsWith('/files/')) {
-				let requestPath;
-				try {
-					requestPath = decodeURIComponent(url.pathname.slice('/files/'.length));
-				} catch {
-					return send(res, 400, { error: 'Malformed path.' });
-				}
-				const { status, file } = resolveSprintFile(root, requestPath);
-				if (status !== 200) return send(res, status, { error: status === 403 ? 'Outside the sprint directory.' : 'Not found.' });
-				return send(res, 200, readFileSync(file), MIME[extname(file)] ?? 'application/octet-stream');
-			}
 			return send(res, 404, { error: 'Not found.' });
 		} catch (error) {
 			return send(res, 500, { error: error.message });
@@ -174,7 +178,37 @@ export function createSprintServer(sprintDir) {
 	return server;
 }
 
-function main() {
+/** Read-only static server for preview files under /files/, on its own origin. */
+export function createFilesServer(sprintDir) {
+	const root = resolve(sprintDir);
+	return createServer((req, res) => {
+		try {
+			const url = parseTarget(req);
+			if (!url) return send(res, 400, { error: 'Malformed request target.' });
+			if (req.method !== 'GET' || !url.pathname.startsWith('/files/')) return send(res, 404, { error: 'Not found.' });
+			let requestPath;
+			try {
+				requestPath = decodeURIComponent(url.pathname.slice('/files/'.length));
+			} catch {
+				return send(res, 400, { error: 'Malformed path.' });
+			}
+			const { status, file } = resolveSprintFile(root, requestPath);
+			if (status !== 200) return send(res, status, { error: status === 403 ? 'Outside the sprint directory.' : 'Not found.' });
+			return send(res, 200, readFileSync(file), MIME[extname(file)] ?? 'application/octet-stream');
+		} catch (error) {
+			return send(res, 500, { error: error.message });
+		}
+	});
+}
+
+function listen(server, port) {
+	return new Promise((resolveListen, reject) => {
+		server.once('error', (error) => reject(error.code === 'EADDRINUSE' ? new Error(`Port ${port} is in use; pass --port or --files-port.`) : error));
+		server.listen(port, '127.0.0.1', resolveListen);
+	});
+}
+
+async function main() {
 	const args = process.argv.slice(2);
 	const value = (flag) => {
 		const index = args.indexOf(flag);
@@ -182,23 +216,25 @@ function main() {
 	};
 	const sprint = value('--sprint');
 	const port = Number(value('--port') ?? 4390);
-	if (!sprint || !Number.isInteger(port)) {
-		console.error('Usage: node serve.mjs --sprint <sprint-dir> [--port 4390]');
+	const filesPort = Number(value('--files-port') ?? port + 1);
+	if (!sprint || !Number.isInteger(port) || !Number.isInteger(filesPort) || port === filesPort) {
+		console.error('Usage: node serve.mjs --sprint <sprint-dir> [--port 4390] [--files-port <port + 1>]');
 		process.exit(64);
 	}
 	if (!existsSync(join(sprint, 'sprint.json'))) {
 		console.error(`No sprint.json in ${sprint}. Write the manifest before serving.`);
 		process.exit(66);
 	}
-	const server = createSprintServer(sprint);
-	server.on('error', (error) => {
-		console.error(error.code === 'EADDRINUSE' ? `Port ${port} is in use; pass --port.` : error.message);
+	try {
+		await listen(createFilesServer(sprint), filesPort);
+		await listen(createSprintServer(sprint, { filesOrigin: `http://127.0.0.1:${filesPort}` }), port);
+	} catch (error) {
+		console.error(error.message);
 		process.exit(69);
-	});
-	server.listen(port, '127.0.0.1', () => {
-		console.log(`Design sprint: http://127.0.0.1:${port}/`);
-		console.log(`Feedback log: ${join(resolve(sprint), 'feedback.jsonl')}`);
-	});
+	}
+	console.log(`Design sprint: http://127.0.0.1:${port}/`);
+	console.log(`Preview files: http://127.0.0.1:${filesPort}/files/`);
+	console.log(`Feedback log: ${join(resolve(sprint), 'feedback.jsonl')}`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) main();
+if (process.argv[1] === fileURLToPath(import.meta.url)) await main();

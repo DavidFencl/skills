@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { createSprintServer, parseFeedback, readFeedback } from './serve.mjs';
+import { createFilesServer, createSprintServer, parseFeedback, readFeedback } from './serve.mjs';
 import { waitForFeedback } from './wait.mjs';
 
 const example = fileURLToPath(new URL('../assets/example-sprint.json', import.meta.url));
@@ -21,11 +21,17 @@ function sprintDir(t, withManifest = true) {
 	return dir;
 }
 
-async function serve(t, dir) {
-	const server = createSprintServer(dir);
+async function listen(t, server) {
 	await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
 	t.after(() => server.close());
-	const port = server.address().port;
+	return server.address().port;
+}
+
+/** The page server and the separate preview-files server, as serve.mjs runs them. */
+async function serve(t, dir) {
+	const filesPort = await listen(t, createFilesServer(dir));
+	const filesOrigin = `http://127.0.0.1:${filesPort}`;
+	const port = await listen(t, createSprintServer(dir, { filesOrigin }));
 	const base = `http://127.0.0.1:${port}`;
 	const request = (path, init) => fetch(`${base}${path}`, init);
 	// fetch normalizes paths and controls some headers, so probes go through node:http unchanged.
@@ -38,6 +44,11 @@ async function serve(t, dir) {
 		req.end(body);
 	});
 	request.port = port;
+	request.filesOrigin = filesOrigin;
+	request.files = (path) => fetch(`${filesOrigin}${path}`);
+	request.filesRaw = (path) => new Promise((resolve, reject) => {
+		httpRequest({ host: '127.0.0.1', port: filesPort, path }, (res) => { res.resume(); resolve(res.statusCode); }).on('error', reject).end();
+	});
 	return request;
 }
 
@@ -63,6 +74,8 @@ test('the server serves the page and the manifest, and reports a missing manifes
 	const page = await request('/');
 	assert.equal(page.status, 200);
 	assert.match(await page.text(), /Do nothing/);
+	assert.equal(page.headers.get('content-security-policy'), "frame-ancestors 'none'");
+	assert.deepEqual(await (await request('/api/config')).json(), { filesOrigin: request.filesOrigin });
 	const manifest = await request('/api/sprint');
 	assert.equal((await manifest.json()).title, 'Organizer applications list');
 
@@ -96,9 +109,20 @@ test('only the page itself can write feedback: JSON content type, own origin, lo
 	assert.equal(await request.raw('/api/feedback', { method: 'POST', body, headers: { 'content-type': 'application/json', origin: 'https://evil.example' } }), 403);
 	assert.equal(await request.raw('/api/feedback', { method: 'POST', body, headers: { 'content-type': 'application/json', origin: 'null' } }), 403);
 	assert.equal(await request.raw('/api/feedback', { method: 'POST', body, headers: { 'content-type': 'application/json', host: `evil.example:${request.port}` } }), 403);
+	assert.equal(await request.raw('/api/feedback', { method: 'POST', body, headers: { 'content-type': 'application/json', origin: request.filesOrigin } }), 403);
 	assert.equal(readFeedback(dir).length, 0);
 	assert.equal(await request.raw('/api/feedback', { method: 'POST', body, headers: { 'content-type': 'application/json', origin: own } }), 201);
 	assert.equal(readFeedback(dir).length, 1);
+});
+
+test('preview files come only from the separate files origin, never from the page origin', async (t) => {
+	const dir = sprintDir(t);
+	writeFileSync(join(dir, 'a.html'), '<script>parent.document.title = "x"</script>');
+	const request = await serve(t, dir);
+	assert.equal((await request('/files/a.html')).status, 404);
+	assert.equal((await request.files('/files/a.html')).status, 200);
+	assert.equal((await request.files('/api/sprint')).status, 404);
+	assert.equal((await request.files('/')).status, 404);
 });
 
 test('files are served only from inside the sprint directory, symlinks included', async (t) => {
@@ -111,19 +135,20 @@ test('files are served only from inside the sprint directory, symlinks included'
 	symlinkSync(join(outside, 'secret.txt'), join(dir, 'link.txt'));
 	symlinkSync(outside, join(dir, 'linked-dir'));
 	const request = await serve(t, dir);
-	assert.equal(await (await request('/files/a.html')).text(), '<p>variant a</p>');
-	assert.equal(await (await request('/files/..notes/n.txt')).text(), 'note');
-	assert.equal(await request.raw('/files/..%2f..%2fetc%2fpasswd'), 403);
-	assert.equal(await request.raw('/files/%2fetc%2fpasswd'), 403);
-	assert.equal(await request.raw('/files/link.txt'), 403);
-	assert.equal(await request.raw('/files/linked-dir/secret.txt'), 403);
-	assert.equal((await request('/files/missing.png')).status, 404);
+	assert.equal(await (await request.files('/files/a.html')).text(), '<p>variant a</p>');
+	assert.equal(await (await request.files('/files/..notes/n.txt')).text(), 'note');
+	assert.equal(await request.filesRaw('/files/..%2f..%2fetc%2fpasswd'), 403);
+	assert.equal(await request.filesRaw('/files/%2fetc%2fpasswd'), 403);
+	assert.equal(await request.filesRaw('/files/link.txt'), 403);
+	assert.equal(await request.filesRaw('/files/linked-dir/secret.txt'), 403);
+	assert.equal((await request.files('/files/missing.png')).status, 404);
 });
 
 test('malformed request targets get 400 and leave the server running', async (t) => {
 	const request = await serve(t, sprintDir(t));
 	assert.equal(await request.raw('http://['), 400);
-	assert.equal(await request.raw('/files/%E0%A4%A'), 400);
+	assert.equal(await request.filesRaw('http://['), 400);
+	assert.equal(await request.filesRaw('/files/%E0%A4%A'), 400);
 	assert.equal((await request('/api/sprint')).status, 200);
 });
 

@@ -12,7 +12,7 @@
 
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -38,15 +38,17 @@ export function parseDescriptor(descriptor) {
 }
 
 /**
- * The headless command for one lane. Codex and Grok run in their own workspace sandboxes. Claude runs
- * with edit-only permission, so it cannot run shell commands or edit outside the project. pi has no
- * sandbox; its shell tool is removed, but its file tools can still write anywhere the user can.
+ * The headless command for one lane. Codex and Grok run in their own workspace sandboxes, but MCP servers
+ * configured for those CLIs still load and run outside the sandbox. Claude runs restricted: no
+ * code-running tools, no user/project settings, no MCP servers, file tools confined to the working
+ * directory. pi loses its shell and MCP tools but has no sandbox, so its file tools can write anywhere the
+ * user can.
  */
 export function buildCommand({ cli, model, effort }, { prompt, promptFile, cwd, lastMessageFile }) {
 	switch (cli) {
 		case 'claude':
 			return { command: 'claude', args: ['-p', ...(model ? ['--model', model] : []), ...(effort ? ['--effort', effort] : []),
-				'--permission-mode', 'acceptEdits', '--disallowedTools', 'Bash', '--no-session-persistence', prompt] };
+				'--permission-mode', 'acceptEdits', '--restricted', '--strict-mcp-config', '--no-session-persistence', prompt] };
 		case 'codex':
 			return { command: 'codex', args: ['exec', ...(model ? ['-m', model] : []), ...(effort ? ['-c', `model_reasoning_effort=${effort}`] : []),
 				'-s', 'workspace-write', '-C', cwd, '--skip-git-repo-check', '-o', lastMessageFile, prompt] };
@@ -55,7 +57,7 @@ export function buildCommand({ cli, model, effort }, { prompt, promptFile, cwd, 
 				'--permission-mode', 'auto', '--sandbox', 'workspace', '--no-subagents', '--cwd', cwd] };
 		case 'pi':
 			return { command: 'pi', args: ['-p', ...(model ? ['--model', model] : []), ...(effort ? ['--thinking', effort] : []),
-				'--no-session', '--no-skills', '--exclude-tools', 'bash', prompt] };
+				'--no-session', '--no-skills', '--no-mcp', '--exclude-tools', 'bash', prompt] };
 		default:
 			throw new Error(`Unknown CLI "${cli}".`);
 	}
@@ -192,18 +194,37 @@ export async function runLane(lane, { sprintDir, cwd, timeoutMs = 0, check = pre
 	});
 }
 
-/** Content hashes of files git reports as changed or untracked, so lanes' stray writes can be found. */
+const sha1 = (data) => createHash('sha1').update(data).digest('hex');
+
+/** A fingerprint of one changed path: file contents, a link target, or a nested repository's own state. */
+function fingerprint(path) {
+	let stat;
+	try {
+		stat = lstatSync(path);
+	} catch {
+		return 'deleted';
+	}
+	if (stat.isSymbolicLink()) return `link:${readlinkSync(path)}`;
+	if (stat.isDirectory()) {
+		// git lists a directory only for a nested repository or submodule; fingerprint its own changes.
+		const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: path, encoding: 'utf8' }).stdout;
+		return `dir:${sha1(`${head}\n${JSON.stringify(snapshotChanges(path))}`)}`;
+	}
+	return sha1(readFileSync(path));
+}
+
+/**
+ * Fingerprints of the paths git reports as changed or untracked, so lanes' stray writes can be found.
+ * Renames are reported as a deletion plus an addition, so a file moved into a lane's paths still shows
+ * its original location as changed.
+ */
 export function snapshotChanges(cwd) {
-	const status = spawnSync('git', ['status', '--porcelain=v1', '-z', '-uall'], { cwd, encoding: 'utf8' });
+	const status = spawnSync('git', ['status', '--porcelain=v1', '-z', '-uall', '--no-renames', '--ignore-submodules=none'], { cwd, encoding: 'utf8' });
 	if (status.status !== 0) return null;
 	const snapshot = {};
-	const entries = status.stdout.split('\0').filter(Boolean);
-	for (let index = 0; index < entries.length; index += 1) {
-		const entry = entries[index];
-		const path = entry.slice(3);
-		if (entry[0] === 'R' || entry[0] === 'C') index += 1;
-		const file = join(cwd, path);
-		snapshot[path] = existsSync(file) ? createHash('sha1').update(readFileSync(file)).digest('hex') : 'deleted';
+	for (const entry of status.stdout.split('\0').filter(Boolean)) {
+		const path = entry.slice(3).replace(/\/$/, '');
+		snapshot[path] = fingerprint(join(cwd, path));
 	}
 	return snapshot;
 }

@@ -36,12 +36,12 @@ test('descriptors name a CLI, an optional model and an optional known effort', (
 test('each CLI runs headless with no shell outside a sandbox and no nested agents', () => {
 	const context = { prompt: 'PROMPT', promptFile: '/s/A.prompt.md', cwd: '/repo', lastMessageFile: '/s/A.last.txt' };
 	assert.deepEqual(buildCommand(parseDescriptor('claude:opus@high'), context), {
-		command: 'claude', args: ['-p', '--model', 'opus', '--effort', 'high', '--permission-mode', 'acceptEdits', '--disallowedTools', 'Bash', '--no-session-persistence', 'PROMPT'] });
+		command: 'claude', args: ['-p', '--model', 'opus', '--effort', 'high', '--permission-mode', 'acceptEdits', '--restricted', '--strict-mcp-config', '--no-session-persistence', 'PROMPT'] });
 	assert.deepEqual(buildCommand(parseDescriptor('codex:gpt-6.1-sol@xhigh'), context), {
 		command: 'codex', args: ['exec', '-m', 'gpt-6.1-sol', '-c', 'model_reasoning_effort=xhigh', '-s', 'workspace-write', '-C', '/repo', '--skip-git-repo-check', '-o', '/s/A.last.txt', 'PROMPT'] });
 	assert.deepEqual(buildCommand(parseDescriptor('grok:grok-4.7@high'), context), {
 		command: 'grok', args: ['--prompt-file', '/s/A.prompt.md', '-m', 'grok-4.7', '--reasoning-effort', 'high', '--permission-mode', 'auto', '--sandbox', 'workspace', '--no-subagents', '--cwd', '/repo'] });
-	assert.deepEqual(buildCommand(parseDescriptor('pi:'), context), { command: 'pi', args: ['-p', '--no-session', '--no-skills', '--exclude-tools', 'bash', 'PROMPT'] });
+	assert.deepEqual(buildCommand(parseDescriptor('pi:'), context), { command: 'pi', args: ['-p', '--no-session', '--no-skills', '--no-mcp', '--exclude-tools', 'bash', 'PROMPT'] });
 });
 
 test('the roster prefers the project config, then the global config, then installed CLIs', (t) => {
@@ -133,4 +133,23 @@ test('changes outside every lane’s own paths are reported, including edits to 
 	assert.deepEqual(outsideChanges(before, after, ['.design-sprint/s', 'src/variant-A']), ['dirty.txt', 'stray.txt']);
 	assert.equal(snapshotChanges(tempDir(t)), null);
 	assert.ok(existsSync(join(repo, 'dirty.txt')));
+});
+
+test('a nested repository and a file renamed into a lane are both handled', (t) => {
+	const repo = tempDir(t);
+	const git = (cwd, ...args) => spawnSync('git', ['-c', 'user.email=a@b.c', '-c', 'user.name=t', ...args], { cwd, encoding: 'utf8' });
+	git(repo, 'init', '-q');
+	mkdirSync(join(repo, 'src', 'variant-A'), { recursive: true });
+	writeFileSync(join(repo, 'src', 'shared.tsx'), 'shared');
+	git(repo, 'add', '.');
+	git(repo, 'commit', '-q', '-m', 'init');
+	mkdirSync(join(repo, 'nested'));
+	git(join(repo, 'nested'), 'init', '-q');
+	writeFileSync(join(repo, 'nested', 'a.txt'), 'one');
+	const before = snapshotChanges(repo);
+
+	writeFileSync(join(repo, 'nested', 'a.txt'), 'two');
+	git(repo, 'mv', 'src/shared.tsx', 'src/variant-A/shared.tsx');
+	const after = snapshotChanges(repo);
+	assert.deepEqual(outsideChanges(before, after, ['src/variant-A']), ['nested', 'src/shared.tsx']);
 });

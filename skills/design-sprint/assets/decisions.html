@@ -98,7 +98,7 @@
 	</section>
 </main>
 <script>
-const state = { sprint: null, signature: '', feedback: [], viewport: 1280, theme: null, online: true };
+const state = { sprint: null, signature: '', feedback: [], viewport: 1280, theme: null, online: true, filesOrigin: null };
 const KEEP = 'keep';
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, children = []) => {
@@ -159,17 +159,18 @@ const modelLabel = (model) => (state.sprint.blind && !submitted() ? 'model hidde
 function fill(template) {
 	return template.replaceAll('{theme}', encodeURIComponent(state.theme ?? '')).replaceAll('{width}', String(state.viewport));
 }
-// Previews may only load http(s) URLs; anything else (javascript:, data:, file:) is refused.
+// Previews may only load http(s) URLs; anything else (javascript:, data:, file:) is refused. A path without
+// a scheme names a file in the sprint directory, served from the separate preview origin.
 function safeUrl(raw) {
 	try {
-		const url = new URL(fill(raw), location.href);
+		const filled = fill(raw);
+		const isSprintFile = !/^[a-z][a-z0-9+.-]*:/i.test(filled) && !filled.startsWith('//');
+		if (isSprintFile && !state.filesOrigin) return null;
+		const url = isSprintFile ? new URL(`/files/${filled.replace(/^\/?(files\/)?/, '')}`, state.filesOrigin) : new URL(filled);
 		return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
 	} catch {
 		return null;
 	}
-}
-function imageUrl(raw) {
-	return /^(https?:)?\/\//.test(raw) || raw.startsWith('/') ? safeUrl(raw) : safeUrl(`/files/${raw}`);
 }
 function previewFor(item, height) {
 	const box = el('div', { className: 'preview' });
@@ -177,7 +178,7 @@ function previewFor(item, height) {
 	const url = item.url ? safeUrl(item.url) : null;
 	if (url) {
 		const frame = el('iframe', { title: item.label ?? 'preview', loading: 'lazy' });
-		// A preview served by this page's own server gets an opaque origin, so it cannot read or drive the page.
+		// Previews never share this page's origin; one that does anyway gets an opaque origin.
 		frame.setAttribute('sandbox', url.origin === location.origin ? 'allow-scripts allow-forms' : 'allow-scripts allow-forms allow-same-origin');
 		frame.src = url.href;
 		box.append(frame);
@@ -188,8 +189,8 @@ function previewFor(item, height) {
 			frame.style.transform = `scale(${scale})`;
 		};
 		new ResizeObserver(fit).observe(box);
-	} else if (item.image && imageUrl(item.image)) {
-		box.append(el('img', { src: imageUrl(item.image).href, alt: item.label ?? 'preview' }));
+	} else if (item.image && safeUrl(item.image)) {
+		box.append(el('img', { src: safeUrl(item.image).href, alt: item.label ?? 'preview' }));
 	} else {
 		const refused = (item.url || item.image) && !url;
 		box.append(el('div', { className: 'empty', textContent: refused ? 'Preview URL refused: only http(s) and relative URLs load.' : item.keep ? 'Keep today’s version' : 'No preview' }));
@@ -369,6 +370,7 @@ async function poll() {
 	try {
 		const [sprint, feedback] = await Promise.all([fetch('/api/sprint').then((r) => r.ok ? r.json() : Promise.reject(new Error('no sprint'))), fetch('/api/feedback').then((r) => r.json())]);
 		const first = !state.sprint;
+		if (first) state.filesOrigin = (await fetch('/api/config').then((r) => r.json())).filesOrigin;
 		state.sprint = sprint;
 		state.feedback = feedback;
 		if (first) picks = loadPicks();
