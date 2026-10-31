@@ -1,0 +1,46 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['22.12', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install ui-changelog browser tools
+        run: |
+          bash skills/ui-changelog/scripts/setup.sh || {
+            sudo "$HOME/.cache/ui-changelog/node_modules/.bin/playwright" install-deps chromium
+            bash skills/ui-changelog/scripts/setup.sh
+          }
+
+      # TypeScript 7 is the native compiler and has no JavaScript compiler API for lib/types.mjs to load.
+      - name: Install TypeScript for the type-drafting tests
+        run: |
+          npm install --prefix "$RUNNER_TEMP/ts" --no-audit --no-fund --loglevel=error typescript@6
+          echo "UI_CHANGELOG_TYPESCRIPT=$RUNNER_TEMP/ts/node_modules/typescript" >> "$GITHUB_ENV"
+
+      - name: Run every test
+        run: |
+          node --test --test-reporter=spec tests/*.test.mjs skills/*/scripts/*.test.mjs | tee "$RUNNER_TEMP/test.log"
+          grep -q '^ℹ skipped 0$' "$RUNNER_TEMP/test.log" || { echo '::error::Some tests were skipped; CI must run all of them.'; exit 1; }
+
+      - name: Check skill portability
+        run: node tests/check-portability.mjs

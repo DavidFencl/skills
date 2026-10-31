@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -90,19 +91,48 @@ test('the roster command allocates the configured or requested number of variant
 	assert.deepEqual(roster('--variants', '2'), ['A=claude:opus#1', 'B=codex:#1']);
 });
 
-test('every script runs when invoked through a symlinked skill directory', (t) => {
-	const link = join(tempDir(t), 'design-sprint');
-	symlinkSync(dirname(import.meta.dirname), link, 'dir');
-	const run = (script, ...args) => spawnSync(process.execPath, [join(link, 'scripts', script), ...args], { encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: tempDir(t) } });
+const freePort = () => new Promise((resolvePort) => {
+	const server = createServer().listen(0, '127.0.0.1', () => {
+		const { port } = server.address();
+		server.close(() => resolvePort(port));
+	});
+});
 
-	const roster = run('lanes.mjs', 'roster', '--cwd', tempDir(t));
-	assert.equal(roster.status, 0, roster.stderr);
-	assert.ok(Array.isArray(JSON.parse(roster.stdout).models), 'roster prints a models array');
-	for (const script of ['serve.mjs', 'wait.mjs']) {
-		const usage = run(script);
-		assert.equal(usage.status, 64, `${script} exits with its usage error`);
-		assert.match(usage.stderr, /Usage: node/);
+test('every script runs when invoked through a symlinked skill directory or a symlinked file', { timeout: 15_000 }, async (t) => {
+	const links = tempDir(t);
+	const skillLink = join(links, 'design-sprint');
+	symlinkSync(dirname(import.meta.dirname), skillLink, 'dir');
+	const fileLink = join(links, 'lanes.mjs');
+	symlinkSync(join(import.meta.dirname, 'lanes.mjs'), fileLink);
+	const env = { ...process.env, XDG_CONFIG_HOME: tempDir(t) };
+	const node = (script, ...args) => spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', env });
+
+	for (const lanes of [join(skillLink, 'scripts', 'lanes.mjs'), fileLink]) {
+		const roster = node(lanes, 'roster', '--cwd', tempDir(t));
+		assert.equal(roster.status, 0, roster.stderr);
+		assert.ok(Array.isArray(JSON.parse(roster.stdout).models), `${lanes} prints a models array`);
 	}
+
+	const sprint = tempDir(t);
+	copyFileSync(join(import.meta.dirname, '..', 'assets', 'example-sprint.json'), join(sprint, 'sprint.json'));
+	const event = { id: 'a', type: 'pick', target: 'direction', option: 'A' };
+	writeFileSync(join(sprint, 'feedback.jsonl'), `${JSON.stringify(event)}\n`);
+	const waited = node(join(skillLink, 'scripts', 'wait.mjs'), '--sprint', sprint, '--after', '0');
+	assert.equal(waited.status, 0, waited.stderr);
+	assert.deepEqual(JSON.parse(waited.stdout), { count: 1, events: [event] });
+
+	const [port, filesPort] = [await freePort(), await freePort()];
+	const server = spawn(process.execPath, [join(skillLink, 'scripts', 'serve.mjs'), '--sprint', sprint, '--port', String(port), '--files-port', String(filesPort)], { env });
+	t.after(() => server.kill());
+	let stderr = '';
+	server.stderr.on('data', (chunk) => (stderr += chunk));
+	await new Promise((ready, fail) => {
+		server.stdout.on('data', (chunk) => String(chunk).includes('Design sprint:') && ready());
+		server.once('exit', (code) => fail(new Error(`serve.mjs exited ${code}: ${stderr}`)));
+	});
+	const page = await fetch(`http://127.0.0.1:${port}/`);
+	assert.equal(page.status, 200);
+	assert.match(await page.text(), /<title>Design sprint<\/title>/);
 });
 
 function laneSetup(t) {
