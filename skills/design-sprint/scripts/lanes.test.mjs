@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
 import { allocateLanes, buildCommand, outsideChanges, parseDescriptor, resolveRoster, runLane, snapshotChanges } from './lanes.mjs';
 
@@ -88,6 +88,21 @@ test('the roster command allocates the configured or requested number of variant
 	};
 	assert.deepEqual(roster(), ['A=claude:opus#1', 'B=codex:#1', 'C=claude:opus#2']);
 	assert.deepEqual(roster('--variants', '2'), ['A=claude:opus#1', 'B=codex:#1']);
+});
+
+test('every script runs when invoked through a symlinked skill directory', (t) => {
+	const link = join(tempDir(t), 'design-sprint');
+	symlinkSync(dirname(import.meta.dirname), link, 'dir');
+	const run = (script, ...args) => spawnSync(process.execPath, [join(link, 'scripts', script), ...args], { encoding: 'utf8', env: { ...process.env, XDG_CONFIG_HOME: tempDir(t) } });
+
+	const roster = run('lanes.mjs', 'roster', '--cwd', tempDir(t));
+	assert.equal(roster.status, 0, roster.stderr);
+	assert.ok(Array.isArray(JSON.parse(roster.stdout).models), 'roster prints a models array');
+	for (const script of ['serve.mjs', 'wait.mjs']) {
+		const usage = run(script);
+		assert.equal(usage.status, 64, `${script} exits with its usage error`);
+		assert.match(usage.stderr, /Usage: node/);
+	}
 });
 
 function laneSetup(t) {

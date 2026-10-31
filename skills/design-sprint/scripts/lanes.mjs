@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isMain } from './entry.mjs';
 
 export const CLIS = ['claude', 'codex', 'grok', 'pi'];
 export const EFFORTS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
@@ -295,7 +295,7 @@ async function main() {
 	throw new Error('Usage: node lanes.mjs roster [--cwd <dir>] [--variants <n>] | run --sprint <dir> --plan <file> [--only A,C] [--timeout <seconds>]');
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+if (isMain(import.meta.url)) {
 	main().catch((error) => {
 		console.error(error.message);
 		process.exitCode = 64;
