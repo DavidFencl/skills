@@ -8,7 +8,7 @@
 // Exit 0 with new events, 2 on timeout (count printed, events empty).
 
 import { setTimeout as sleep } from 'node:timers/promises';
-import { fileURLToPath } from 'node:url';
+import { isMain } from './entry.mjs';
 import { readFeedback } from './serve.mjs';
 
 export async function waitForFeedback(sprintDir, { after, timeoutMs = 0, intervalMs = 500 } = {}) {
@@ -40,4 +40,4 @@ async function main() {
 	process.exit(result.events.length ? 0 : 2);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+if (isMain(import.meta.url)) await main();

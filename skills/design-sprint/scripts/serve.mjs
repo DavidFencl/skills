@@ -11,6 +11,7 @@ import { appendFileSync, existsSync, readFileSync, realpathSync, statSync } from
 import { createServer } from 'node:http';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isMain } from './entry.mjs';
 
 const PAGE = fileURLToPath(new URL('../assets/decisions.html', import.meta.url));
 const MAX_BODY = 64 * 1024;
@@ -237,4 +238,4 @@ async function main() {
 	console.log(`Feedback log: ${join(resolve(sprint), 'feedback.jsonl')}`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+if (isMain(import.meta.url)) await main();
