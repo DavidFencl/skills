@@ -56,8 +56,8 @@ The manifest format is in [`references/manifest.md`](skills/ui-changelog/referen
 ## Development
 
 ```bash
-node --test tests/ui-changelog.test.mjs     # script tests; browser tests need setup.sh
-node tests/check-portability.mjs            # frontmatter, prose and loader checks for every harness installed
+node --test tests/*.test.mjs skills/*/scripts/*.test.mjs   # every test; browser tests need setup.sh
+node tests/check-portability.mjs                            # frontmatter, prose and loader checks for every harness installed
 ```
 
-Set `UI_CHANGELOG_TYPESCRIPT` to a `typescript` package directory to run the type-reading tests. Agent-level test cases live in `skills/ui-changelog/evals/` in the skill-creator format (`prompt.md`, `case.yaml`, `graders/`, a scaffold script), and `evals/trigger-queries.json` holds should-trigger and should-not-trigger prompts for tuning the description.
+Set `UI_CHANGELOG_TYPESCRIPT` to a `typescript` package directory to run the type-reading tests. CI (`.github/workflows/test.yml`) runs both commands on every pull request with Chromium and TypeScript installed, on Node 22.12 and 24, and fails if any test is skipped. Harness loader checks in `check-portability.mjs` are skipped there because no harness is installed. Agent-level test cases live in `skills/ui-changelog/evals/` in the skill-creator format (`prompt.md`, `case.yaml`, `graders/`, a scaffold script), and `evals/trigger-queries.json` holds should-trigger and should-not-trigger prompts for tuning the description.
