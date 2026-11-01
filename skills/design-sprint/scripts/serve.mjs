@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // Serves the design-sprint decisions page for one sprint directory and records the user's
-// picks, re-prompts and final answer to <sprint>/feedback.jsonl. Node built-ins only.
+// picks, re-prompts, answers and final answer to <sprint>/feedback.jsonl. Node built-ins only.
 //
 //   node serve.mjs --sprint .design-sprint/<slug> [--port 4390] [--files-port 4391]
 //
 // The page and its API run on --port; preview files run on --files-port, a separate origin.
 
 import { randomUUID } from 'node:crypto';
-import { appendFileSync, existsSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -31,7 +31,11 @@ const ID = '[A-Za-z0-9._-]+';
 const TARGETS = {
 	pick: new RegExp(`^(direction|decision:${ID})$`),
 	reprompt: new RegExp(`^(direction|sprint|variant:${ID}|decision:${ID})$`),
+	answer: new RegExp(`^question:${ID}$`),
 };
+const OPTION_ID = new RegExp(`^${ID}$`);
+const PRESENCE_FRESH_MS = 15_000;
+const PRESENCE_WORKING_MS = 10 * 60_000;
 
 /** Complete records only: a line still being appended is not valid JSON yet, so it is skipped until it is. */
 export function readFeedback(sprintDir) {
@@ -64,11 +68,93 @@ export function parseFeedback(body) {
 			if (!TARGETS.reprompt.test(event.target ?? '')) return 'A re-prompt needs a target of direction, sprint, variant:<id> or decision:<id>.';
 			if (!event.text?.trim()) return 'A re-prompt needs text.';
 			return event;
-		case 'submit':
+		case 'submit': {
 			if (!event.text?.trim()) return 'A submission needs the answer text.';
+			if (body.answers === undefined) return event;
+			const answers = parseAnswers(body.answers);
+			if (typeof answers === 'string') return answers;
+			event.answers = answers;
 			return event;
+		}
+		case 'answer': {
+			if (!TARGETS.answer.test(event.target ?? '')) return 'An answer needs a target of question:<id>.';
+			if (event.option !== undefined && !OPTION_ID.test(event.option)) return 'An answer option must be an id.';
+			const text = event.text?.trim() ?? '';
+			if (text) event.text = text;
+			else delete event.text;
+			if (!event.option && !event.text) return 'An answer needs an option id or text.';
+			return event;
+		}
 		default:
-			return 'type must be one of: pick, reprompt, submit.';
+			return 'type must be one of: pick, reprompt, answer, submit.';
+	}
+}
+
+const MAX_ANSWERS = 20;
+
+function parseAnswers(raw) {
+	const entries = raw && typeof raw === 'object' && !Array.isArray(raw) ? Object.entries(raw) : null;
+	if (!entries || entries.length > MAX_ANSWERS) return `answers must be an object of at most ${MAX_ANSWERS} questions.`;
+	const answers = {};
+	for (const [id, value] of entries) {
+		if (!OPTION_ID.test(id)) return 'answers must be keyed by question id.';
+		const option = value?.option;
+		const text = typeof value?.text === 'string' ? value.text.trim() : value?.text;
+		if (option !== undefined && (typeof option !== 'string' || !OPTION_ID.test(option))) return `The answer to ${id} needs an option id.`;
+		if (text !== undefined && (typeof text !== 'string' || text.length > MAX_FIELD)) return `The answer to ${id} must be text of at most ${MAX_FIELD} characters.`;
+		if (!option && !text) return `The answer to ${id} needs an option or text.`;
+		answers[id] = { ...(option ? { option } : {}), ...(text ? { text } : {}) };
+	}
+	return answers;
+}
+
+function sprintId(root) {
+	const file = join(root, '.sprint-id');
+	try {
+		return readFileSync(file, 'utf8').trim();
+	} catch {
+		const id = randomUUID();
+		writeFileSync(file, id);
+		return id;
+	}
+}
+
+function asObject(value) {
+	return value !== null && typeof value === 'object' && !Array.isArray(value) ? value : null;
+}
+
+function timeMs(value) {
+	if (typeof value !== 'string') return null;
+	const ms = Date.parse(value);
+	return Number.isFinite(ms) ? ms : null;
+}
+
+export function derivePresence({ listener, progress, sprintMtimeMs = null, now = Date.now() } = {}) {
+	const listenerOk = asObject(listener);
+	const progressOk = asObject(progress);
+	const listenerAt = timeMs(listenerOk?.at);
+	const progressAt = timeMs(progressOk?.at);
+	const age = (ms) => (ms == null ? Infinity : now - ms);
+	const fresh = (ms) => age(ms) <= PRESENCE_FRESH_MS;
+
+	const listening = listenerOk?.listening === true && fresh(listenerAt);
+	const running = Array.isArray(progressOk?.running) ? progressOk.running.filter((id) => typeof id === 'string' && id) : [];
+	const finished = Array.isArray(progressOk?.finished)
+		? progressOk.finished.filter((item) => asObject(item) && typeof item.id === 'string' && item.id).map(({ id, status }) => ({ id, status: typeof status === 'string' ? status : null }))
+		: [];
+	const building = fresh(progressAt) && running.length > 0 ? { running, finished } : null;
+	const latest = [listenerAt, progressAt, sprintMtimeMs].filter((ms) => ms != null).reduce((max, ms) => Math.max(max, ms), -Infinity);
+	const state = listening ? 'listening' : latest !== -Infinity && age(latest) <= PRESENCE_WORKING_MS ? 'working' : 'stalled';
+	const seen = typeof listenerOk?.seen === 'number' && Number.isFinite(listenerOk.seen) ? listenerOk.seen : 0;
+	const since = listening || listenerAt == null ? null : new Date(listenerAt).toISOString();
+	return { state, seen, building, since };
+}
+
+function readOptionalJson(file) {
+	try {
+		return JSON.parse(readFileSync(file, 'utf8'));
+	} catch {
+		return null;
 	}
 }
 
@@ -135,8 +221,10 @@ function parseTarget(req) {
  * The decisions page and its API. Preview files are not served here: they come from the files server
  * on another port, so preview code never shares the page's origin and cannot drive the page.
  */
-export function createSprintServer(sprintDir, { filesOrigin } = {}) {
+export function createSprintServer(sprintDir, { filesOrigin, onDone } = {}) {
 	const root = resolve(sprintDir);
+	const id = sprintId(root);
+	let doneServed = false;
 	const server = createServer(async (req, res) => {
 		try {
 			const url = parseTarget(req);
@@ -147,15 +235,32 @@ export function createSprintServer(sprintDir, { filesOrigin } = {}) {
 				return send(res, 200, readFileSync(PAGE), MIME['.html']);
 			}
 			if (req.method === 'GET' && url.pathname === '/api/config') {
-				return send(res, 200, { filesOrigin: filesOrigin ?? null });
+				return send(res, 200, { filesOrigin: filesOrigin ?? null, sprintId: id, maxText: MAX_FIELD });
 			}
-			if (req.method === 'GET' && url.pathname === '/api/sprint') {
+			if (req.method === 'GET' && url.pathname === '/api/state') {
 				const manifest = join(root, 'sprint.json');
-				if (!existsSync(manifest)) return send(res, 404, { error: 'sprint.json not found.' });
-				return send(res, 200, readFileSync(manifest), MIME['.json']);
+				let sprint;
+				try {
+					sprint = JSON.parse(readFileSync(manifest, 'utf8'));
+				} catch (error) {
+					if (error.code === 'ENOENT') return send(res, 404, { error: 'sprint.json not found.' });
+					return send(res, 500, { error: 'sprint.json is not valid JSON.' });
+				}
+				if (sprint?.done && !doneServed) {
+					doneServed = true;
+					if (onDone) res.once('finish', onDone);
+				}
+				return send(res, 200, {
+					sprint,
+					feedback: readFeedback(root),
+					agent: derivePresence({
+						listener: readOptionalJson(join(root, 'listener.json')),
+						progress: readOptionalJson(join(root, 'lanes', 'progress.json')),
+						sprintMtimeMs: statSync(manifest, { throwIfNoEntry: false })?.mtimeMs ?? null,
+					}),
+				});
 			}
 			if (url.pathname === '/api/feedback') {
-				if (req.method === 'GET') return send(res, 200, readFeedback(root));
 				if (req.method !== 'POST') return send(res, 405, { error: 'Method not allowed.' });
 				const foreign = rejectForeignWrite(req, server.address().port);
 				if (foreign) return send(res, 403, { error: foreign });
@@ -228,7 +333,8 @@ async function main() {
 	}
 	try {
 		await listen(createFilesServer(sprint), filesPort);
-		await listen(createSprintServer(sprint, { filesOrigin: `http://127.0.0.1:${filesPort}` }), port);
+		const onDone = () => { console.log('The page has shown the done screen. Stopping.'); process.exit(0); };
+		await listen(createSprintServer(sprint, { filesOrigin: `http://127.0.0.1:${filesPort}`, onDone }), port);
 	} catch (error) {
 		console.error(error.message);
 		process.exit(69);

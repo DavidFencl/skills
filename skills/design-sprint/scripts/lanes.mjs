@@ -11,8 +11,8 @@
 // Node built-ins only.
 
 import { spawn, spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, rmSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { existsSync, lstatSync, mkdirSync, readFileSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
 import { isMain } from './entry.mjs';
@@ -207,6 +207,41 @@ export async function runLane(lane, { sprintDir, cwd, timeoutMs = 0, check = pre
 	});
 }
 
+function writeJsonAtomic(directory, name, value) {
+	const tmp = join(directory, `.${name}.${process.pid}.${randomUUID()}.tmp`);
+	writeFileSync(tmp, `${JSON.stringify(value)}\n`);
+	renameSync(tmp, join(directory, name));
+}
+
+export async function runLanes(lanes, { sprintDir, cwd, timeoutMs = 0, check, spawnImpl, progressIntervalMs = 5000, now = () => Date.now() } = {}) {
+	const dir = join(sprintDir, 'lanes');
+	mkdirSync(dir, { recursive: true });
+	const running = new Set(lanes.map((lane) => lane.id));
+	const finished = [];
+	const snapshot = () => ({
+		running: lanes.map((lane) => lane.id).filter((id) => running.has(id)),
+		finished: finished.map(({ id, status }) => ({ id, status })),
+		at: new Date(now()).toISOString(),
+	});
+	const write = () => writeJsonAtomic(dir, 'progress.json', snapshot());
+	write();
+	const timer = setInterval(() => { if (running.size) write(); }, Math.max(1, progressIntervalMs));
+	timer.unref();
+	try {
+		return await Promise.all(lanes.map(async (lane) => {
+			const receipt = await runLane(lane, { sprintDir, cwd, timeoutMs, check, spawnImpl });
+			running.delete(lane.id);
+			finished.push({ id: lane.id, status: receipt.status });
+			write();
+			return receipt;
+		}));
+	} finally {
+		clearInterval(timer);
+		running.clear();
+		write();
+	}
+}
+
 const sha1 = (data) => createHash('sha1').update(data).digest('hex');
 
 /** A fingerprint of one changed path: file contents, a link target, or a nested repository's own state. */
@@ -279,7 +314,7 @@ async function main() {
 			});
 		}
 		const before = snapshotChanges(cwd);
-		const receipts = await Promise.all(lanes.map((lane) => runLane(lane, { sprintDir: resolve(sprintDir), cwd, timeoutMs })));
+		const receipts = await runLanes(lanes, { sprintDir: resolve(sprintDir), cwd, timeoutMs });
 		const after = snapshotChanges(cwd);
 		const sprintPath = relative(cwd, resolve(sprintDir)).split(sep).join('/');
 		const allowed = [sprintPath, ...plan.lanes.flatMap((lane) => lane.owns ?? [])];
