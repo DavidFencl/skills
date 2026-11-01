@@ -896,14 +896,17 @@ async function poll() {
 	if (state.stopped || state.polling) return;
 	state.polling = true;
 	try {
-		const response = await fetch('/api/state', { cache: 'no-store' });
-		if (!response.ok) throw new Error(`HTTP ${response.status}`);
-		const data = await response.json();
-		if (!state.sprint) {
+		// Config comes first: once the server has sent a done state it stops, so a later request would fail.
+		if (!state.sprintId) {
 			const config = await (await fetch('/api/config', { cache: 'no-store' })).json();
 			state.filesOrigin = config.filesOrigin;
 			state.sprintId = config.sprintId;
 			state.maxText = config.maxText;
+		}
+		const response = await fetch('/api/state', { cache: 'no-store' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const data = await response.json();
+		if (!state.sprint) {
 			state.sprint = data.sprint;
 			Object.assign(picks, loadPicks());
 			for (const event of data.feedback) {

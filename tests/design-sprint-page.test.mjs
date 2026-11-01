@@ -37,7 +37,7 @@ function sprint(overrides = {}) {
 	};
 }
 
-async function harness(t, manifest) {
+async function harness(t, manifest, { stopOnDone = false } = {}) {
 	let dir = mkdtempSync(path.join(os.tmpdir(), 'design-sprint-page-'));
 	const dirs = [dir];
 	const servers = [];
@@ -57,7 +57,8 @@ async function harness(t, manifest) {
 		mkdirSync(path.join(dir, 'lanes'));
 		save();
 		const files = createFilesServer(dir);
-		const server = createSprintServer(dir, { filesOrigin: await listen(files) });
+		const stop = () => { server.close(); server.closeAllConnections(); };
+		const server = createSprintServer(dir, { filesOrigin: await listen(files), onDone: stopOnDone ? stop : undefined });
 		servers.push(files, server);
 		return listen(server, port);
 	};
@@ -351,4 +352,11 @@ test('a new sprint with the same title starts clean, other steps never reload, a
 	await page.locator('body[data-step="direction"]').waitFor();
 	assert.equal(await page.getByRole('button', { name: /^Picked/ }).count(), 0, 'the old sprint\'s picks do not carry over');
 	assert.equal(await page.locator('#next').isDisabled(), true);
+});
+
+test('a page opened after the sprint is done shows the done screen, though the server stops once it has sent it', { skip: NO_BROWSER }, async (t) => {
+	const { page } = await harness(t, sprint({ done: { message: 'Recorded 1 decision.' } }), { stopOnDone: true });
+	assert.equal(await page.locator('body').getAttribute('data-phase'), 'done');
+	assert.match(await visibleText(page), /Recorded 1 decision\./);
+	assert.equal(await page.locator('#offline').isHidden(), true);
 });
