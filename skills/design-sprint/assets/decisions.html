@@ -15,146 +15,272 @@
 		:root { --bg: #111417; --panel: #1a1f23; --line: #2e353b; --ink: #e8ecef; --muted: #9aa4ad; --accent: #3fb8a9; --accent-ink: #0b1513; --warn: #f0b35a; }
 	}
 	* { box-sizing: border-box; }
-	body { margin: 0; background: var(--bg); color: var(--ink); }
-	header { position: sticky; top: 0; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 12px 20px; display: grid; gap: 8px; }
-	main { padding: 20px; display: grid; gap: 28px; max-width: 1600px; margin: 0 auto; }
+	html, body { height: 100%; }
+	body { margin: 0; background: var(--bg); color: var(--ink); overflow-wrap: anywhere; display: flex; flex-direction: column; overflow: hidden; }
+	header { flex: none; z-index: 2; background: var(--panel); border-bottom: 1px solid var(--line); padding: 10px 16px; display: grid; gap: 8px; }
+	main { flex: 1; min-height: 0; overflow: auto; }
+	.content { padding: 16px 16px 28px; display: grid; gap: 20px; max-width: 1600px; margin: 0 auto; }
+	footer { flex: none; z-index: 2; background: var(--panel); border-top: 1px solid var(--line); padding: 10px 16px; }
+	[hidden] { display: none !important; }
 	h1 { font-size: 18px; margin: 0; }
-	h2 { font-size: 16px; margin: 0 0 4px; }
+	h2 { font-size: 17px; margin: 0; }
 	h3 { font-size: 15px; margin: 0; }
 	p { margin: 0; }
 	.muted { color: var(--muted); }
 	.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 	.spacer { flex: 1; }
-	button, select, textarea { font: inherit; color: inherit; }
-	button { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 5px 10px; cursor: pointer; }
+	button, select, textarea, input { font: inherit; color: inherit; }
+	button { border: 1px solid var(--line); background: var(--panel); border-radius: var(--radius); padding: 6px 10px; cursor: pointer; }
 	button:hover { border-color: var(--muted); }
 	button.primary, button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-	button:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-	select, textarea { border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius); padding: 5px 8px; }
+	button:disabled { opacity: 0.45; cursor: not-allowed; }
+	button:focus-visible, a:focus-visible, textarea:focus-visible, select:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+	select, textarea { border: 1px solid var(--line); background: var(--bg); border-radius: var(--radius); padding: 6px 8px; max-width: 100%; }
 	textarea { width: 100%; min-height: 56px; resize: vertical; }
-	.answer { font-family: ui-monospace, monospace; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 8px; min-width: 16ch; }
+	a { color: var(--accent); }
+	#goal { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+	.presence::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: currentColor; vertical-align: 1px; }
+	.presence.listening { color: var(--accent); }
+	.presence.working, .presence.stalled { color: var(--warn); }
+	.presence.working::before { animation: pulse 1.2s ease-in-out infinite; }
+	@keyframes pulse { 50% { opacity: 0.3; } }
+	@media (prefers-reduced-motion: reduce) { .presence.working::before { animation: none; } }
+	.agent-line { border-left: 3px solid var(--accent); padding: 2px 0 2px 10px; }
+	#agent-message { flex: 1; min-width: 12ch; }
+	.stepper { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+	.chip { flex: none; white-space: nowrap; }
+	.chip[aria-current="step"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 	.grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(min(100%, 420px), 1fr)); }
-	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 10px; align-content: start; }
+	.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px; display: grid; gap: 10px; align-content: start; min-width: 0; }
 	.card.picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
 	.tag { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; color: var(--muted); }
-	.tag.rec { border-color: var(--accent); color: var(--accent); }
+	.tag.rec, .tag.new { border-color: var(--accent); color: var(--accent); }
 	.preview { position: relative; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
 	.preview iframe { border: 0; transform-origin: 0 0; position: absolute; top: 0; left: 0; background: transparent; }
 	.preview img { display: block; width: 100%; height: 100%; object-fit: contain; object-position: top; }
 	.preview .empty { display: grid; place-items: center; height: 100%; padding: 16px; text-align: center; color: var(--muted); }
-	.decision { display: grid; gap: 10px; }
 	details summary { cursor: pointer; color: var(--muted); }
-	.status { font-size: 13px; }
-	.status.working { color: var(--warn); }
-	.history li { margin: 4px 0; }
-	.notice { border: 1px solid var(--warn); color: var(--warn); border-radius: var(--radius); padding: 8px 12px; }
+	details[open] > summary { margin-bottom: 8px; }
+	fieldset { border: 1px solid var(--line); border-radius: var(--radius); display: grid; gap: 8px; padding: 12px; margin: 0; }
+	.choice { display: flex; gap: 8px; align-items: flex-start; }
+	.thread { display: grid; gap: 10px; }
+	.request { display: grid; gap: 6px; border-left: 3px solid var(--line); padding: 6px 0 6px 12px; }
+	.request-text, .agent-note { white-space: pre-wrap; }
+	.agent-response { display: grid; gap: 4px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius); }
+	.agent-response.working { border-color: var(--warn); }
+	.question { display: grid; gap: 8px; padding: 10px; border: 1px solid var(--accent); border-radius: var(--radius); background: var(--panel); }
+	.question.answered { border-color: var(--line); }
+	#step > section { display: grid; gap: 12px; align-content: start; }
+	.review-list { margin: 0; padding-left: 20px; display: grid; gap: 8px; }
+	.review-list li.missing { color: var(--warn); }
+	.lanes { margin: 0; padding-left: 20px; }
+	.notice { border: 1px solid var(--warn); color: var(--warn); border-radius: var(--radius); padding: 8px 12px; margin: 12px 16px 0; flex: none; }
+	@media (max-width: 600px) {
+		header, footer, .content { padding-left: 12px; padding-right: 12px; }
+		header { gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+		header button, footer button { padding: 4px 8px; }
+		#goal { display: none; }
+		h1 { font-size: 16px; }
+	}
 </style>
 </head>
 <body>
 <header>
-	<div class="row">
-		<h1 id="title">Design sprint</h1>
-		<span class="tag" id="round"></span>
-		<span class="spacer"></span>
-		<div class="row" role="group" aria-labelledby="width-label"><span id="width-label">Width</span><span class="row" id="viewports"></span></div>
-		<label class="row" id="theme-wrap" hidden>Theme <select id="theme"></select></label>
+	<div class="row" id="top"></div>
+	<p id="goal" class="muted"></p>
+	<p id="presence" class="presence"></p>
+	<div id="agent-line" class="row agent-line" role="status" aria-live="polite" hidden>
+		<span id="agent-message"></span>
+		<button type="button" id="agent-show">Show</button>
 	</div>
-	<p class="muted" id="goal"></p>
-	<div class="row">
-		<strong>Your answer</strong>
-		<output class="answer" id="answer" aria-live="polite">nothing picked</output>
-		<button type="button" id="copy">Copy answer</button>
-		<button type="button" class="primary" id="submit">Submit answer</button>
-		<span class="status" id="send-status" role="status"></span>
-	</div>
+	<nav id="stepper" class="stepper" aria-label="Steps"></nav>
+	<p id="send-status" class="muted" role="status"></p>
 </header>
-<main>
-	<div class="notice" id="offline" hidden>The feedback server is not reachable. Picks still work here; use “Copy answer” and paste it to the agent.</div>
-	<section aria-labelledby="variants-title">
-		<h2 id="variants-title">Variants</h2>
-		<p class="muted">Pick a direction, ask for changes to any variant, or keep the current screen.</p>
-		<div class="grid" id="variants"></div>
-		<div class="card" style="margin-top:16px">
-			<h3>None of these?</h3>
-			<label for="reprompt-direction" class="muted">Describe the direction you want instead. The agent adds it as a new variant.</label>
-			<textarea id="reprompt-direction" data-draft="direction"></textarea>
-			<div class="row"><button type="button" data-reprompt="direction" data-source="reprompt-direction">Send to agent</button></div>
-		</div>
-	</section>
-	<section aria-labelledby="decisions-title" id="decisions-section">
-		<h2 id="decisions-title">Decisions</h2>
-		<p class="muted">Each option changes one thing. “Do nothing” keeps today’s behaviour.</p>
-		<div class="decision" id="decisions"></div>
-	</section>
-	<section aria-labelledby="notes-title">
-		<h2 id="notes-title">Anything else</h2>
-		<label for="notes" class="muted">A note sent with your submitted answer, or a general request.</label>
-		<textarea id="notes" data-draft="notes"></textarea>
-		<div class="row" style="margin-top:8px"><button type="button" data-reprompt="sprint" data-source="notes">Send as request</button></div>
-	</section>
-	<section aria-labelledby="history-title">
-		<h2 id="history-title">Requests</h2>
-		<ul class="history" id="history"><li class="muted">No requests yet.</li></ul>
-	</section>
+<div class="notice" id="offline" hidden>The sprint server is not reachable. Your picks are kept in this browser; use Copy answer and paste it to the agent.</div>
+<main id="main">
+	<div class="content">
+		<section id="asks" aria-labelledby="asks-title" hidden></section>
+		<div id="step"></div>
+	</div>
 </main>
+<footer id="footer" hidden></footer>
 <script>
-const state = { sprint: null, signature: '', feedback: [], viewport: 1280, theme: null, online: true, filesOrigin: null };
 const KEEP = 'keep';
-const $ = (id) => document.getElementById(id);
-const el = (tag, props = {}, children = []) => {
-	const node = Object.assign(document.createElement(tag), props);
-	for (const child of [].concat(children)) if (child != null) node.append(child);
-	return node;
-};
-const storageKey = () => `design-sprint:${location.host}:${state.sprint?.title ?? ''}`;
-const loadPicks = () => { try { return JSON.parse(localStorage.getItem(storageKey())) ?? {}; } catch { return {}; } };
-let picks = {};
+const STATUS_WORDS = { sent: 'Sent', received: 'Received by the agent', working: 'Working', done: 'Done', declined: 'Declined' };
+const state = { sprint: null, feedback: [], agent: null, filesOrigin: null, viewport: 1280, theme: null, phase: 'building', stepId: null, signatures: {}, stopped: false, busy: false };
+const picks = {};
+const sentPicks = {};
 const drafts = {};
+const choices = {};
+const observers = new Map();
 
-function savePicks() { localStorage.setItem(storageKey(), JSON.stringify(picks)); renderAnswer(); }
-
-// "Do nothing" is always available: the manifest's own keep option wins, otherwise one is added.
-function withKeep(options, keepLabel, current) {
-	if (options.some((option) => option.keep)) return options;
-	return [...options, { id: KEEP, keep: true, label: keepLabel, note: current?.note ?? 'No change: keep what exists today.', url: current?.url, image: current?.image }];
+const $ = (id) => document.getElementById(id);
+function el(tag, props = {}, children = []) {
+	const node = document.createElement(tag);
+	for (const [key, value] of Object.entries(props)) {
+		if (value == null) continue;
+		if (key === 'dataset') Object.assign(node.dataset, value);
+		else if (key === 'role' || key.startsWith('aria')) node.setAttribute(key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`), value);
+		else node[key] = value;
+	}
+	for (const child of [].concat(children)) if (child != null && child !== false) node.append(child);
+	return node;
 }
-const optionId = (decision, option) => (option.keep ? `${decision.id}-keep` : option.id);
+const domId = (key) => `field-${String(key).replace(/[^A-Za-z0-9_-]/g, '_')}`;
+const clip = (text, max) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+function hashId() { try { return decodeURIComponent(location.hash.slice(1)); } catch { return ''; } }
+const toHash = (id) => `#${encodeURIComponent(id).replace(/%3A/gi, ':')}`;
+const storageKey = () => `design-sprint:${state.sprintId}`;
+function loadPicks() { try { return JSON.parse(localStorage.getItem(storageKey())) ?? {}; } catch { return {}; } }
+function savePicks() { try { localStorage.setItem(storageKey(), JSON.stringify(picks)); } catch { /* storage can be blocked */ } }
+function setStatus(text) { $('send-status').textContent = text; }
+
+const liveVariants = (sprint) => (sprint.variants ?? []).filter((variant) => !variant.retired);
+const hasSubmit = () => state.feedback.some((event) => event.type === 'submit');
+function phaseOf(sprint, feedback) {
+	if (sprint.done) return 'done';
+	if (feedback.some((event) => event.type === 'submit')) return 'wrap-up';
+	return liveVariants(sprint).length ? 'choosing' : 'building';
+}
+function keepLabel(kind) {
+	if (kind === 'direction') return state.sprint.mode === 'new-feature' ? "Don't add it" : 'Do nothing: keep the current screen';
+	return 'Do nothing: keep today’s behaviour';
+}
+// "Do nothing" is always available: the manifest's own keep option wins, otherwise one is added.
+function withKeep(options, label, current) {
+	if (options.some((option) => option.keep)) return options;
+	return [...options, { id: KEEP, keep: true, label, note: current?.note ?? 'No change: keep what exists today.', url: current?.url, image: current?.image, height: current?.height }];
+}
+const optionValue = (decision, option) => (option.keep ? `${decision.id}-keep` : option.id);
+function activeDecisions(sprint, chosen) {
+	if (sprint.mode !== 'new-feature') return sprint.decisions ?? [];
+	if (!chosen.direction || chosen.direction === KEEP) return [];
+	return (sprint.decisions ?? []).filter((decision) => decision.basedOn === chosen.direction);
+}
+function stepsOf(sprint, chosen) {
+	const steps = [{ id: 'direction', kind: 'direction', title: 'Direction' }];
+	const decisions = activeDecisions(sprint, chosen);
+	const picked = liveVariants(sprint).find((variant) => variant.id === chosen.direction);
+	if (sprint.mode === 'new-feature' && picked && !picked.noDecisions && !decisions.length) {
+		steps.push({ id: 'waiting', kind: 'waiting', title: 'Decisions', variantId: chosen.direction });
+	} else {
+		for (const decision of decisions) steps.push({ id: `decision:${decision.id}`, kind: 'decision', title: clip(decision.question || `Decision ${decision.id}`, 40), decision });
+	}
+	steps.push({ id: 'review', kind: 'review', title: 'Review' });
+	return steps;
+}
+const currentSteps = () => (state.phase === 'choosing' ? stepsOf(state.sprint, picks) : []);
+const currentStep = () => currentSteps().find((step) => step.id === state.stepId) ?? null;
+const pickTarget = (step) => (step.kind === 'direction' ? 'direction' : step.kind === 'decision' ? step.id : null);
 
 // Picks of retired variants or removed options are dropped, so the answer only names what is on the page.
-function activeChoices() {
-	const choices = new Map();
-	const variants = withKeep((state.sprint?.variants ?? []).filter((variant) => !variant.retired), '', state.sprint?.current);
-	choices.set('direction', new Set(variants.map((variant) => (variant.keep ? KEEP : variant.id))));
-	for (const decision of state.sprint?.decisions ?? []) {
-		choices.set(`decision:${decision.id}`, new Set(withKeep(decision.options ?? [], '', decision.current).map((option) => optionId(decision, option))));
-	}
-	return choices;
-}
 function reconcilePicks() {
-	const choices = activeChoices();
+	const valid = new Map([['direction', new Set(withKeep(liveVariants(state.sprint), '', state.sprint.current).map((variant) => (variant.keep ? KEEP : variant.id)))]]);
+	for (const decision of activeDecisions(state.sprint, picks)) valid.set(`decision:${decision.id}`, new Set(withKeep(decision.options ?? [], '', decision.current).map((option) => optionValue(decision, option))));
 	let changed = false;
 	for (const [target, value] of Object.entries(picks)) {
-		if (!choices.get(target)?.has(value)) { delete picks[target]; changed = true; }
+		if (!valid.get(target)?.has(value)) { delete picks[target]; changed = true; }
 	}
-	if (changed) localStorage.setItem(storageKey(), JSON.stringify(picks));
+	if (changed) savePicks();
 }
-
 function answerText() {
-	reconcilePicks();
 	const parts = [];
-	const direction = picks.direction;
-	if (direction) parts.push(direction === KEEP ? 'Direction: keep current' : `Direction ${direction}`);
-	for (const decision of state.sprint?.decisions ?? []) {
+	if (picks.direction) parts.push(picks.direction === KEEP ? 'Direction: keep current' : `Direction ${picks.direction}`);
+	for (const decision of activeDecisions(state.sprint, picks)) {
 		const pick = picks[`decision:${decision.id}`];
 		if (pick) parts.push(pick.endsWith('-keep') ? `${decision.id}: keep` : pick);
 	}
 	return parts.join(', ');
 }
-function renderAnswer() { $('answer').textContent = answerText() || 'nothing picked'; }
+function pickLabel(step, value) {
+	if (!value) return '';
+	if (value === KEEP || value.endsWith('-keep')) return step.kind === 'direction' && state.sprint.mode === 'new-feature' ? "don't add it" : 'keep';
+	return value;
+}
 
-// Blind sprints hide which model made each variant until the user submits.
-const submitted = () => state.feedback.some((event) => event.type === 'submit');
-const modelLabel = (model) => (state.sprint.blind && !submitted() ? 'model hidden' : model);
+const received = (event) => {
+	const index = state.feedback.findIndex((item) => item.id === event.id);
+	return index > -1 && index < (state.agent?.seen ?? 0);
+};
+const deliveryWord = (event) => (received(event) ? 'Received by the agent' : 'Sent');
+function answerOf(question) { return state.feedback.findLast((event) => event.type === 'answer' && event.target === `question:${question.id}`) ?? null; }
+const questions = () => (state.sprint.questions ?? []).filter((question) => question?.id);
+const withSubmitQuestions = () => questions().filter((question) => question.withSubmit);
+const askedQuestions = () => questions().filter((question) => !question.withSubmit);
+const openQuestions = () => askedQuestions().filter((question) => !answerOf(question));
+function targetLabel(target) {
+	if (target === 'direction') return 'a new direction';
+	if (target === 'sprint') return 'your general request';
+	return target.replace(':', ' ');
+}
+function threadTargets() {
+	const targets = new Set(['direction', 'sprint', ...liveVariants(state.sprint).map((variant) => `variant:${variant.id}`)]);
+	for (const decision of activeDecisions(state.sprint, picks)) targets.add(`decision:${decision.id}`);
+	return targets;
+}
+function stepForTarget(target) {
+	if (target === 'direction' || target.startsWith('variant:')) return threadTargets().has(target) ? 'direction' : 'review';
+	if (target.startsWith('decision:') && threadTargets().has(target)) return target;
+	return 'review';
+}
+function requestItems() {
+	const byId = new Map((state.sprint.requests ?? []).map((request) => [request.feedbackId, request]));
+	return state.feedback.filter((event) => event.type === 'reprompt').map((event) => {
+		const request = byId.get(event.id);
+		const status = ['working', 'done', 'declined'].includes(request?.status) ? request.status : received(event) ? 'received' : 'sent';
+		return { event, status, note: request?.note ?? '', questions: askedQuestions().filter((question) => question.about === event.id) };
+	});
+}
+function urgentItem(items) {
+	const open = openQuestions();
+	const unfinished = items.filter((item) => ['sent', 'received', 'working'].includes(item.status));
+	const others = (count) => (count > 0 ? ` ${count} other ${count === 1 ? 'thing is' : 'things are'} still open.` : '');
+	if (open.length) {
+		const question = open[0];
+		const about = items.find((item) => item.event.id === question.about);
+		return {
+			text: `The agent asks${about ? ` about ${targetLabel(about.event.target)}` : ''}: ${question.text}${others(open.length - 1 + unfinished.filter((item) => item !== about).length)}`,
+			action: 'Reply', stepId: about ? stepForTarget(about.event.target) : null, nodeId: `question-${question.id}`,
+		};
+	}
+	const reportable = state.phase === 'choosing' ? items : unfinished;
+	const item = unfinished.findLast((candidate) => candidate.status === 'working') ?? reportable.at(-1);
+	if (!item) return null;
+	const target = targetLabel(item.event.target);
+	const lead = { sent: `Your request about ${target} is sent`, received: `The agent has your request about ${target}`, working: `Working on ${target}`, done: `Done with ${target}`, declined: `The agent declined ${target}` }[item.status];
+	return {
+		text: `${lead}${item.note ? `: ${item.note}` : '.'}${others(unfinished.filter((other) => other !== item).length)}`,
+		action: 'Show', stepId: stepForTarget(item.event.target), nodeId: `request-${item.event.id}`,
+	};
+}
+
+function questionComplete(question) {
+	if (question.options?.length && choices[question.id]) return true;
+	return Boolean((question.allowText || !question.options?.length) && (drafts[`answer:${question.id}`] ?? '').trim());
+}
+function canSubmit() {
+	if (state.phase !== 'choosing') return false;
+	const steps = currentSteps().filter((step) => step.kind !== 'review');
+	return steps.every((step) => step.kind !== 'waiting' && picks[pickTarget(step)]) && withSubmitQuestions().every(questionComplete);
+}
+
+function elapsed(since) {
+	const minutes = Math.floor((Date.now() - Date.parse(since)) / 60000);
+	if (!Number.isFinite(minutes) || minutes < 1) return '';
+	return minutes < 60 ? ` (${minutes} min)` : ` (${Math.floor(minutes / 60)} h ${minutes % 60} min)`;
+}
+function buildingText() {
+	const running = state.agent?.building?.running ?? [];
+	if (!running.length) return '';
+	return running.length === 1 ? ` Building variant ${running[0]}.` : ` Building variants ${running.join(', ')}.`;
+}
+function presenceText() {
+	const agent = state.agent;
+	if (!agent) return '';
+	if (agent.state === 'listening') return `The agent is listening.${buildingText()}`;
+	if (agent.state === 'working') return `${state.sprint.status?.message?.trim() || 'Working on your last input.'}${agent.since ? elapsed(agent.since) : ''}${buildingText()}`;
+	return 'No activity from the agent for 10 minutes. Check its terminal.';
+}
 
 function fill(template) {
 	return template.replaceAll('{theme}', encodeURIComponent(state.theme ?? '')).replaceAll('{width}', String(state.viewport));
@@ -177,7 +303,7 @@ function previewFor(item, height) {
 	box.style.height = `${item.height ?? height}px`;
 	const url = item.url ? safeUrl(item.url) : null;
 	if (url) {
-		const frame = el('iframe', { title: item.label ?? 'preview', loading: 'lazy' });
+		const frame = el('iframe', { title: item.label ? `Preview: ${item.label}` : 'Preview', loading: 'lazy' });
 		// Previews never share this page's origin; one that does anyway gets an opaque origin.
 		frame.setAttribute('sandbox', url.origin === location.origin ? 'allow-scripts allow-forms' : 'allow-scripts allow-forms allow-same-origin');
 		frame.src = url.href;
@@ -185,203 +311,641 @@ function previewFor(item, height) {
 		const fit = () => {
 			const scale = Math.min(1, box.clientWidth / state.viewport);
 			frame.style.width = `${state.viewport}px`;
-			frame.style.height = `${box.clientHeight / scale}px`;
+			frame.style.height = `${box.clientHeight / Math.max(scale, 0.01)}px`;
 			frame.style.transform = `scale(${scale})`;
 		};
-		new ResizeObserver(fit).observe(box);
+		const observer = new ResizeObserver(fit);
+		observer.observe(box);
+		observers.set(box, observer);
 	} else if (item.image && safeUrl(item.image)) {
-		box.append(el('img', { src: safeUrl(item.image).href, alt: item.label ?? 'preview' }));
+		box.append(el('img', { src: safeUrl(item.image).href, alt: item.label || 'Preview' }));
 	} else {
 		const refused = (item.url || item.image) && !url;
 		box.append(el('div', { className: 'empty', textContent: refused ? 'Preview URL refused: only http(s) and relative URLs load.' : item.keep ? 'Keep today’s version' : 'No preview' }));
 	}
 	return box;
 }
-function keyed(node, key) { node.dataset.key = key; return node; }
-function draftArea(key, label) {
-	const id = `draft-${key.replace(/[^a-z0-9-]/gi, '_')}`;
-	const area = el('textarea', { id, value: drafts[key] ?? '' });
-	area.dataset.draft = key;
-	return [el('label', { htmlFor: id, className: 'muted', textContent: label }), area,
-		el('div', { className: 'row' }, el('button', { type: 'button', textContent: 'Send to agent', onclick: () => sendReprompt(key, area) }))];
+// Blind sprints hide which model made each variant until the user submits.
+const visibleModel = (model) => (model && !(state.sprint.blind && !hasSubmit()) ? model : null);
+
+function renderWhenChanged(region, signature, build) {
+	const key = JSON.stringify(signature);
+	if (state.signatures[region] === key) return;
+	state.signatures[region] = key;
+	build();
+}
+function captureView() {
+	const active = document.activeElement;
+	const focus = active && active !== document.body ? {
+		draft: active.dataset?.draft, id: active.id,
+		selection: typeof active.selectionStart === 'number' ? [active.selectionStart, active.selectionEnd, active.selectionDirection] : null,
+		scroll: active.scrollTop,
+	} : null;
+	return { focus, open: new Set([...document.querySelectorAll('details[open][data-key]')].map((node) => node.dataset.key)), scroll: $('main').scrollTop };
+}
+function restoreView(view) {
+	for (const node of document.querySelectorAll('details[data-key]')) if (view.open.has(node.dataset.key)) node.open = true;
+	const { focus } = view;
+	const target = focus && ((focus.draft && document.querySelector(`[data-draft="${CSS.escape(focus.draft)}"]`)) || (focus.id && $(focus.id)));
+	if (target && target !== document.activeElement) {
+		target.focus({ preventScroll: true });
+		if (focus.selection && target.setSelectionRange) target.setSelectionRange(...focus.selection);
+		target.scrollTop = focus.scroll;
+	}
+	$('main').scrollTop = view.scroll;
+}
+
+function render() {
+	if (!state.sprint) return;
+	reconcilePicks();
+	for (const question of withSubmitQuestions()) choices[question.id] ??= question.options?.find((option) => option.recommended)?.id;
+	syncView();
+	const items = requestItems();
+	const view = captureView();
+	const stepBefore = state.signatures.stepKey;
+	renderTop();
+	renderStepper();
+	renderContent();
+	renderAsks();
+	renderThreads(items);
+	restoreView(view);
+	if (stepBefore !== state.signatures.stepKey) $('main').scrollTop = 0;
+	renderPresence(items);
+	refreshPicks();
+	renderDynamic();
+	renderFooter();
+	document.body.dataset.phase = state.phase;
+	document.body.dataset.step = state.stepId ?? '';
+}
+function syncView() {
+	const viewports = state.sprint.viewports?.length ? state.sprint.viewports : [390, 1280];
+	if (!viewports.includes(state.viewport)) state.viewport = viewports.at(-1);
+	const themes = state.sprint.themes ?? [];
+	if (!themes.includes(state.theme)) state.theme = themes[0] ?? null;
+	state.phase = phaseOf(state.sprint, state.feedback);
+	if (state.phase !== 'choosing') { state.stepId = null; return; }
+	const steps = currentSteps();
+	const hash = hashId();
+	const step = steps.find((item) => item.id === hash)
+		?? (hash === 'waiting' ? steps.find((item) => item.kind === 'decision') ?? steps.find((item) => item.kind === 'review') : null)
+		?? steps.find((item) => item.id === state.stepId)
+		?? steps[0];
+	state.stepId = step.id;
+	if (hash !== step.id) history.replaceState(null, '', toHash(step.id));
+}
+
+function renderTop() {
+	const sprint = state.sprint;
+	const viewports = sprint.viewports?.length ? sprint.viewports : [390, 1280];
+	const themes = sprint.themes ?? [];
+	renderWhenChanged('top', [sprint.title, sprint.goal, sprint.round, viewports, themes, state.viewport, state.theme], () => {
+		document.title = `${sprint.title || 'Design sprint'} · design sprint`;
+		const theme = el('select', { id: 'theme' }, themes.map((name) => el('option', { value: name, textContent: name, selected: name === state.theme })));
+		theme.addEventListener('change', () => { state.theme = theme.value; render(); });
+		$('top').replaceChildren(
+			el('h1', { textContent: sprint.title || 'Design sprint' }),
+			el('span', { className: 'tag', textContent: `Round ${sprint.round ?? 1}` }),
+			el('span', { className: 'spacer' }),
+			el('div', { className: 'row', role: 'group', ariaLabel: 'Preview width' }, viewports.map((width) => el('button', {
+				type: 'button', textContent: `${width}px`, ariaPressed: String(width === state.viewport), onclick: () => { state.viewport = width; render(); },
+			}))),
+			themes.length ? el('label', { className: 'row' }, ['Theme', theme]) : null,
+			el('button', { type: 'button', id: 'copy', textContent: 'Copy answer', onclick: copyAnswer }),
+		);
+		$('goal').textContent = sprint.goal ?? '';
+	});
+}
+function renderStepper() {
+	const steps = currentSteps();
+	const chips = steps.map((step, index) => {
+		const value = step.kind === 'review' || step.kind === 'waiting' ? '' : pickLabel(step, picks[pickTarget(step)]);
+		return { id: step.id, text: `${index + 1} ${step.title}${value ? ` · ${value}` : ''}` };
+	});
+	renderWhenChanged('stepper', [chips, state.stepId], () => {
+		$('stepper').hidden = !chips.length;
+		$('stepper').replaceChildren(...chips.map((chip) => el('button', {
+			type: 'button', className: 'chip', textContent: chip.text, ariaCurrent: chip.id === state.stepId ? 'step' : null, onclick: () => go(chip.id),
+		})));
+	});
+}
+
+function shellSignature() {
+	const sprint = state.sprint;
+	const base = [state.phase, state.stepId, state.viewport, state.theme, state.filesOrigin, sprint.mode];
+	if (state.phase === 'building') return [...base, sprint.current, sprint.dropouts];
+	if (state.phase !== 'choosing') return [...base, state.feedback.findLast((event) => event.type === 'submit'), sprint.done, liveVariants(sprint).map(({ id, label, model }) => [id, label, model])];
+	const step = currentStep();
+	if (step.kind === 'decision') {
+		const { options, ...question } = step.decision;
+		return [...base, question];
+	}
+	if (step.kind === 'review') return [...base, withSubmitQuestions()];
+	return [...base, step.variantId];
+}
+function release(node) {
+	for (const box of node.querySelectorAll('.preview')) {
+		observers.get(box)?.disconnect();
+		observers.delete(box);
+	}
+}
+// Replaces only the cards whose content changed and moves a card only when the order changes, because a moved iframe reloads.
+function reconcile(container, cards) {
+	const keys = new Set(cards.map((card) => card.key));
+	for (const node of [...container.children]) if (!keys.has(node.dataset.key)) { release(node); node.remove(); }
+	cards.forEach(({ key, signature, build }, index) => {
+		let node = [...container.children].find((child) => child.dataset.key === key);
+		if (!node || node.dataset.signature !== signature) {
+			const fresh = build();
+			Object.assign(fresh.dataset, { key, signature });
+			if (node) { release(node); node.replaceWith(fresh); }
+			node = fresh;
+		}
+		const at = container.children[index];
+		if (at !== node) container.insertBefore(node, at ?? null);
+	});
+}
+function renderCards() {
+	const container = $('cards');
+	const step = currentStep();
+	if (!container || !step) return;
+	if (step.kind === 'direction') {
+		const variants = withKeep(liveVariants(state.sprint), keepLabel('direction'), state.sprint.current);
+		reconcile(container, [
+			...variants.map((variant) => ({ key: `variant:${variant.keep ? KEEP : variant.id}`, signature: JSON.stringify([variant, isNew(variant)]), build: () => variantCard(variant) })),
+			{ key: 'none', signature: '', build: noneCard },
+		]);
+	} else if (step.kind === 'decision') {
+		const { decision } = step;
+		reconcile(container, withKeep(decision.options ?? [], keepLabel('decision'), decision.current).map((option) => ({
+			key: optionValue(decision, option), signature: JSON.stringify(option), build: () => optionCard(decision, option),
+		})));
+	}
+}
+function renderContent() {
+	renderWhenChanged('content', shellSignature(), () => {
+		release($('step'));
+		state.signatures.stepKey = `${state.phase}|${state.stepId}`;
+		state.signatures.lanes = null;
+		state.signatures['review-rows'] = null;
+		const step = currentStep();
+		const view = {
+			building: renderBuilding, 'wrap-up': renderWrapUp, done: renderDone,
+			choosing: () => ({ direction: renderDirection, waiting: renderWaiting, decision: renderDecision, review: renderReview })[step.kind](step),
+		}[state.phase]();
+		$('step').replaceChildren(view);
+	});
+	renderCards();
+}
+
+function threadSlot(target) { return el('div', { className: 'thread', dataset: { threadTarget: target }, hidden: true }); }
+function draftFields(key, label, button = 'Send to agent') {
+	const id = domId(key);
+	const area = el('textarea', { id, value: drafts[key] ?? '', maxLength: state.maxText, dataset: { draft: key } });
+	return [el('label', { htmlFor: id, className: 'muted', textContent: label }), area, el('div', { className: 'row' }, el('button', { type: 'button', textContent: button, onclick: () => sendReprompt(key) }))];
 }
 function pickButton(target, value, label) {
-	const button = el('button', { type: 'button', onclick: () => { picks[target] = value; savePicks(); post({ type: 'pick', target, option: value }); refreshPicks(); } });
-	Object.assign(button.dataset, { pickTarget: target, pickValue: value, pickLabel: label });
-	return button;
+	return el('button', { type: 'button', id: domId(`pick-${target}-${value}`), ariaPressed: 'false', dataset: { pickTarget: target, pickValue: value, pickLabel: label }, onclick: () => choose(target, value) });
+}
+const isNew = (variant) => variant.round > 1 && variant.round === state.sprint.round;
+function variantCard(variant) {
+	const tags = [
+		variant.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
+		isNew(variant) ? el('span', { className: 'tag new', textContent: 'New' }) : null,
+		visibleModel(variant.model) ? el('span', { className: 'tag', textContent: variant.model }) : null,
+	];
+	const url = variant.url ? safeUrl(variant.url) : null;
+	const card = el('article', { className: 'card' }, [
+		el('div', { className: 'row' }, [
+			el('h3', { textContent: variant.keep ? variant.label : `${variant.id} · ${variant.label}` }), ...tags, el('span', { className: 'spacer' }),
+			url ? el('a', { href: url.href, target: '_blank', rel: 'noopener noreferrer', textContent: 'Open' }) : null,
+			pickButton('direction', variant.keep ? KEEP : variant.id, variant.keep ? (state.sprint.mode === 'new-feature' ? "Don't add it" : 'Do nothing') : variant.id),
+		]),
+		previewFor(variant, 520),
+	]);
+	if (variant.prompt) card.append(el('p', { className: 'muted', textContent: `From your request: “${variant.prompt}”` }));
+	for (const [name, text] of [['Angle', variant.angle], ['Intent', variant.intent], ['Trade-offs', variant.tradeoffs]]) {
+		if (text) card.append(el('p', {}, [el('strong', { textContent: `${name}: ` }), text]));
+	}
+	if (variant.note) card.append(el('p', { className: 'muted', textContent: variant.note }));
+	for (const review of variant.reviews ?? []) {
+		const model = visibleModel(review.model);
+		card.append(el('p', { className: 'muted' }, [el('strong', { textContent: model ? `Second opinion (${model}): ` : 'Second opinion: ' }), review.text ?? '']));
+	}
+	if (!variant.keep) {
+		card.append(threadSlot(`variant:${variant.id}`), el('details', { dataset: { key: `variant:${variant.id}` } }, [
+			el('summary', { textContent: `Change variant ${variant.id}` }), ...draftFields(`variant:${variant.id}`, `What should change in ${variant.id}?`),
+		]));
+	}
+	return card;
+}
+function renderDirection() {
+	const sprint = state.sprint;
+	return el('section', { ariaLabelledby: 'step-title' }, [
+		el('h2', { id: 'step-title', tabIndex: -1, textContent: 'Pick a direction' }),
+		el('p', { className: 'muted', textContent: sprint.mode === 'new-feature' ? 'Pick the variant to build on, or don’t add the feature.' : 'Pick the variant to build on, or keep the current screen.' }),
+		el('div', { className: 'grid', id: 'cards' }),
+	]);
+}
+function noneCard() {
+	return el('article', { className: 'card' }, [el('h3', { textContent: 'None of these?' }), threadSlot('direction'),
+		...draftFields('direction', 'Describe the direction you want instead. The agent adds it as a new variant.')]);
+}
+function renderDecision(step) {
+	const { decision } = step;
+	const target = step.id;
+	return el('section', { ariaLabelledby: 'step-title' }, [
+		el('h2', { id: 'step-title', tabIndex: -1, textContent: decision.question || step.title }),
+		decision.why ? el('p', { className: 'muted', textContent: decision.why }) : null,
+		decision.recommendation ? el('p', {}, [el('strong', { textContent: 'Recommended: ' }), decision.recommendation]) : null,
+		el('p', { className: 'muted', textContent: 'Each option changes only this one thing.' }),
+		el('div', { className: 'grid', id: 'cards' }),
+		threadSlot(target),
+		el('details', { dataset: { key: target } }, [el('summary', { textContent: 'None of these fit' }), ...draftFields(target, `What would you want for “${decision.question}”?`)]),
+	]);
+}
+function optionCard(decision, option) {
+	return el('article', { className: 'card' }, [
+		el('div', { className: 'row' }, [
+			el('h3', { textContent: option.keep ? option.label : `${option.id} · ${option.label}` }),
+			option.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
+			el('span', { className: 'spacer' }),
+			pickButton(`decision:${decision.id}`, optionValue(decision, option), option.keep ? 'Do nothing' : option.id),
+		]),
+		previewFor(option, 300),
+		option.note ? el('p', { className: 'muted', textContent: option.note }) : null,
+	]);
+}
+function renderWaiting(step) {
+	return el('section', { ariaLabelledby: 'step-title' }, [
+		el('h2', { id: 'step-title', tabIndex: -1, textContent: `Building decision options over ${step.variantId}` }),
+		el('p', { className: 'muted', textContent: 'They replace this step as soon as they are ready. You can go back and pick another direction meanwhile.' }),
+	]);
+}
+function renderSubmitQuestion(question) {
+	const field = el('fieldset', { id: `question-${question.id}` }, el('legend', { textContent: question.text }));
+	for (const option of question.options ?? []) {
+		const id = domId(`choice-${question.id}-${option.id}`);
+		const input = el('input', { type: 'radio', id, name: `choice-${question.id}`, value: option.id, checked: choices[question.id] === option.id });
+		input.addEventListener('change', () => { choices[question.id] = option.id; renderFooter(); renderDynamic(); });
+		field.append(el('div', { className: 'choice' }, [input, el('label', { htmlFor: id, textContent: option.label || option.id })]));
+	}
+	if (question.allowText || !question.options?.length) {
+		const key = `answer:${question.id}`;
+		field.append(el('label', { htmlFor: domId(key), className: 'muted', textContent: question.options?.length ? 'Anything to add?' : 'Your answer' }),
+			el('textarea', { id: domId(key), value: drafts[key] ?? '', maxLength: state.maxText, dataset: { draft: key } }));
+	}
+	return field;
+}
+function renderReview() {
+	const after = withSubmitQuestions();
+	return el('section', { ariaLabelledby: 'step-title', className: 'content-review' }, [
+		el('h2', { id: 'step-title', tabIndex: -1, textContent: 'Review and submit' }),
+		el('ol', { className: 'review-list', id: 'review-rows' }),
+		after.length ? el('section', { className: 'card' }, [el('h3', { textContent: 'After the sprint' }), ...after.map(renderSubmitQuestion)]) : null,
+		el('section', { className: 'card' }, [
+			el('label', { htmlFor: domId('notes'), textContent: 'A note sent with your answer (optional)' }),
+			el('textarea', { id: domId('notes'), value: drafts.notes ?? '', maxLength: state.maxText, dataset: { draft: 'notes' } }),
+		]),
+		threadSlot('sprint'),
+		el('details', { dataset: { key: 'sprint' } }, [el('summary', { textContent: 'Ask for something else before you submit' }),
+			...draftFields('sprint', 'A general request: something the sprint should change or add.')]),
+		el('section', { id: 'earlier', hidden: true }, [el('h3', { textContent: 'Earlier requests' }), threadSlot('*')]),
+		el('p', { id: 'review-block', className: 'muted' }),
+	]);
+}
+function renderModels() {
+	const variants = liveVariants(state.sprint).filter((variant) => variant.model);
+	if (!variants.length) return null;
+	return el('section', {}, [el('h3', { textContent: 'Who built what' }), el('ul', {}, variants.map((variant) => el('li', { textContent: `${variant.id} · ${variant.label}: ${variant.model}` })))]);
+}
+function renderBuilding() {
+	const sprint = state.sprint;
+	return el('section', { ariaLabelledby: 'step-title', className: 'grid' }, [
+		el('article', { className: 'card' }, [
+			el('h2', { id: 'step-title', textContent: 'Building the variants' }),
+			el('p', { className: 'muted', textContent: 'The first step opens here as soon as they are ready.' }),
+			el('ul', { className: 'lanes', id: 'lanes' }),
+			(sprint.dropouts ?? []).length ? el('ul', {}, sprint.dropouts.map((dropout) => el('li', { textContent: `${dropout.id} dropped out. ${dropout.reason ?? ''}`.trim() }))) : null,
+		]),
+		sprint.current ? el('article', { className: 'card' }, [el('h3', { textContent: 'Today' }), previewFor(sprint.current, 360), sprint.current.note ? el('p', { className: 'muted', textContent: sprint.current.note }) : null]) : null,
+	]);
+}
+function renderWrapUp() {
+	const submitted = state.feedback.findLast((event) => event.type === 'submit');
+	return el('section', { ariaLabelledby: 'step-title', className: 'card' }, [
+		el('h2', { id: 'step-title', textContent: 'Your answer is with the agent' }),
+		el('p', {}, [el('strong', { textContent: 'Answer: ' }), submitted.text]),
+		submitted.option ? el('p', {}, [el('strong', { textContent: 'Note: ' }), submitted.option]) : null,
+		el('p', { id: 'delivery', role: 'status' }),
+		renderModels(),
+		el('section', {}, [el('h3', { textContent: 'Requests' }), threadSlot('all')]),
+	]);
+}
+function renderDone() {
+	const submitted = state.feedback.findLast((event) => event.type === 'submit');
+	return el('section', { ariaLabelledby: 'step-title', className: 'card' }, [
+		el('h2', { id: 'step-title', textContent: 'Sprint done' }),
+		el('p', { textContent: state.sprint.done.message ?? '' }),
+		submitted ? el('p', {}, [el('strong', { textContent: 'Answer: ' }), submitted.text]) : null,
+		renderModels(),
+		el('p', { className: 'muted', textContent: 'You can close this tab.' }),
+	]);
+}
+
+function questionBlock(question) {
+	const answer = answerOf(question);
+	const block = el('div', { className: answer ? 'question answered' : 'question', id: `question-${question.id}` }, el('p', {}, [el('strong', { textContent: 'The agent asks: ' }), question.text]));
+	if (answer) {
+		const option = question.options?.find((item) => item.id === answer.option);
+		block.append(el('p', {}, [el('strong', { textContent: 'Your answer: ' }), [option?.label ?? answer.option, answer.text].filter(Boolean).join('. ')]), el('p', { className: 'muted', textContent: deliveryWord(answer) }));
+		return block;
+	}
+	const textAllowed = question.allowText || !question.options?.length;
+	if (question.options?.length) {
+		block.append(el('div', { className: 'row', role: 'group', ariaLabel: question.text }, question.options.map((option) => el('button', {
+			type: 'button', id: domId(`option-${question.id}-${option.id}`), textContent: option.label || option.id, ariaPressed: textAllowed ? String(choices[question.id] === option.id) : null,
+			onclick: () => {
+				if (!textAllowed) return sendAnswer(question, option.id);
+				choices[question.id] = choices[question.id] === option.id ? undefined : option.id;
+				render();
+			},
+		}))));
+	}
+	if (textAllowed) {
+		const key = `answer:${question.id}`;
+		block.append(el('label', { htmlFor: domId(key), className: 'muted', textContent: question.options?.length ? 'Or say more' : 'Your answer' }),
+			el('textarea', { id: domId(key), value: drafts[key] ?? '', maxLength: state.maxText, dataset: { draft: key } }),
+			el('div', { className: 'row' }, el('button', { type: 'button', textContent: 'Send answer', onclick: () => sendAnswer(question, choices[question.id]) })));
+	}
+	return block;
+}
+function threadOnScreen(requestId) {
+	const event = state.feedback.find((item) => item.id === requestId && item.type === 'reprompt');
+	if (!event) return false;
+	if (document.querySelector('[data-thread-target="all"]')) return true;
+	if (document.querySelector('[data-thread-target="*"]') && !threadTargets().has(event.target)) return true;
+	return Boolean(document.querySelector(`[data-thread-target="${CSS.escape(event.target)}"]`));
+}
+function renderAsks() {
+	const shown = state.phase === 'done' ? [] : askedQuestions().filter((question) => !question.about || !threadOnScreen(question.about))
+		.filter((question) => { const answer = answerOf(question); return !answer || !received(answer); });
+	renderWhenChanged('asks', [shown, shown.map((question) => [answerOf(question), choices[question.id], answerOf(question) && received(answerOf(question))])], () => {
+		$('asks').hidden = !shown.length;
+		$('asks').replaceChildren(el('h2', { id: 'asks-title', textContent: 'The agent asks' }), ...shown.map(questionBlock));
+	});
+}
+function requestNode(item, orphan) {
+	const node = el('div', { className: 'request', id: `request-${item.event.id}` }, [
+		el('p', { className: 'request-text' }, [el('strong', { textContent: orphan ? `You asked about ${targetLabel(item.event.target)}: ` : 'You asked: ' }), item.event.text]),
+		el('div', { className: `agent-response ${item.status}` }, [
+			el('strong', { textContent: STATUS_WORDS[item.status] }),
+			item.note ? el('p', { className: 'agent-note', textContent: item.note }) : null,
+		]),
+	]);
+	for (const question of item.questions) node.append(questionBlock(question));
+	return node;
+}
+function renderThreads(items) {
+	const live = threadTargets();
+	for (const slot of document.querySelectorAll('[data-thread-target]')) {
+		const target = slot.dataset.threadTarget;
+		const thread = items.filter(({ event }) => (target === 'all' ? true : target === '*' ? !live.has(event.target) : event.target === target));
+		const signature = JSON.stringify([thread, thread.flatMap((item) => item.questions.map((question) => [answerOf(question), choices[question.id], answerOf(question) && received(answerOf(question))]))]);
+		if (slot.dataset.signature === signature) continue;
+		slot.dataset.signature = signature;
+		slot.hidden = !thread.length;
+		if (target === '*') $('earlier').hidden = !thread.length;
+		slot.replaceChildren(...thread.map((item) => requestNode(item, target === '*' || target === 'all')));
+	}
+}
+
+function renderPresence(items) {
+	$('presence').hidden = state.phase === 'done';
+	const text = presenceText();
+	if ($('presence').textContent !== text) $('presence').textContent = text;
+	$('presence').className = `presence ${state.agent?.state ?? ''}`;
+	const urgent = state.phase === 'done' ? null : urgentItem(items);
+	$('agent-line').hidden = !urgent;
+	if (!urgent) return;
+	if ($('agent-message').textContent !== urgent.text) $('agent-message').textContent = urgent.text;
+	$('agent-show').textContent = urgent.action;
+	$('agent-show').onclick = () => reveal(urgent);
+}
+async function reveal({ stepId, nodeId, action }) {
+	if (state.phase === 'choosing' && stepId && stepId !== state.stepId) await go(stepId);
+	const node = $(nodeId);
+	if (!node) return;
+	node.closest('details')?.setAttribute('open', '');
+	node.scrollIntoView({ block: 'center' });
+	if (action === 'Reply') node.querySelector('textarea, button')?.focus({ preventScroll: true });
 }
 // Picks only restyle buttons and cards, so previews do not reload.
 function refreshPicks() {
 	for (const button of document.querySelectorAll('button[data-pick-target]')) {
 		const pressed = picks[button.dataset.pickTarget] === button.dataset.pickValue;
-		button.ariaPressed = String(pressed);
+		button.setAttribute('aria-pressed', String(pressed));
 		button.textContent = `${pressed ? 'Picked' : 'Pick'} ${button.dataset.pickLabel}`;
 		button.closest('.card')?.classList.toggle('picked', pressed);
 	}
 }
-
-function renderVariants() {
-	const sprint = state.sprint;
-	const variants = withKeep((sprint.variants ?? []).filter((variant) => !variant.retired), 'Do nothing — keep the current screen', sprint.current);
-	$('variants').replaceChildren(...variants.map((variant) => {
-		const value = variant.keep ? KEEP : variant.id;
-		const head = el('div', { className: 'row' }, [
-			el('h3', { textContent: variant.keep ? variant.label : `${variant.id} · ${variant.label}` }),
-			variant.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
-			variant.round ? el('span', { className: 'tag', textContent: `Round ${variant.round}` }) : null,
-			variant.model ? el('span', { className: 'tag', textContent: modelLabel(variant.model) }) : null,
-			el('span', { className: 'spacer' }),
-			variant.url && safeUrl(variant.url) ? el('a', { href: safeUrl(variant.url).href, target: '_blank', rel: 'noopener noreferrer', textContent: 'Open' }) : null,
-			pickButton('direction', value, variant.keep ? 'keep' : variant.id),
-		]);
-		const card = el('article', { className: 'card' }, [head, previewFor(variant, 560)]);
-		if (variant.prompt) card.append(el('p', { className: 'muted', textContent: `From your request: “${variant.prompt}”` }));
-		for (const [label, text] of [['Angle', variant.angle], ['Intent', variant.intent], ['Trade-offs', variant.tradeoffs], ['', variant.note && !variant.keep ? variant.note : null]]) {
-			if (text) card.append(el('p', {}, [label ? el('strong', { textContent: `${label}: ` }) : null, text]));
-		}
-		for (const review of variant.reviews ?? []) {
-			card.append(el('p', { className: 'muted' }, [el('strong', { textContent: `Second opinion (${modelLabel(review.model)}): ` }), review.text]));
-		}
-		if (variant.keep && variant.note) card.append(el('p', { className: 'muted', textContent: variant.note }));
-		if (!variant.keep) card.append(keyed(el('details', {}, [el('summary', { textContent: `Change variant ${variant.id}` }), ...draftArea(`variant:${variant.id}`, `What should change in ${variant.id}?`)]), `variant:${variant.id}`));
-		return card;
-	}));
-}
-
-function renderDecisions() {
-	const decisions = state.sprint.decisions ?? [];
-	$('decisions-section').hidden = decisions.length === 0;
-	$('decisions').replaceChildren(...decisions.map((decision) => {
-		const target = `decision:${decision.id}`;
-		const options = withKeep(decision.options ?? [], 'Do nothing — keep today’s behaviour', decision.current);
-		return el('section', { className: 'card' }, [
-			el('h3', { textContent: `${decision.id} · ${decision.question}` }),
-			decision.why ? el('p', { className: 'muted', textContent: decision.why }) : null,
-			decision.recommendation ? el('p', {}, [el('strong', { textContent: 'Recommended: ' }), decision.recommendation]) : null,
-			el('div', { className: 'grid' }, options.map((option) => {
-				const value = optionId(decision, option);
-				return el('div', { className: 'card' }, [
-					el('div', { className: 'row' }, [
-						el('strong', { textContent: option.keep ? option.label : `${option.id} · ${option.label}` }),
-						option.recommended ? el('span', { className: 'tag rec', textContent: 'Recommended' }) : null,
-						el('span', { className: 'spacer' }),
-						pickButton(target, value, option.keep ? 'keep' : option.id),
-					]),
-					previewFor(option, 300),
-					option.note ? el('p', { className: 'muted', textContent: option.note }) : null,
-				]);
-			})),
-			keyed(el('details', {}, [el('summary', { textContent: 'None of these fit' }), ...draftArea(target, `What would you want for “${decision.question}”?`)]), target),
-		]);
-	}));
-}
-
-function renderHistory() {
-	const requests = new Map((state.sprint?.requests ?? []).map((request) => [request.feedbackId, request]));
-	const items = state.feedback.filter((event) => event.type !== 'pick');
-	if (!items.length) return $('history').replaceChildren(el('li', { className: 'muted', textContent: 'No requests yet.' }));
-	$('history').replaceChildren(...items.reverse().map((event) => {
-		const request = requests.get(event.id);
-		const status = request?.status ?? 'sent';
-		return el('li', {}, [
-			el('span', { className: `status ${status === 'working' ? 'working' : ''}`, textContent: `[${status}] ` }),
-			el('strong', { textContent: event.type === 'submit' ? 'Submitted' : `Re-prompt (${event.target})` }),
-			`: ${event.text ?? ''}`,
-			request?.note ? el('span', { className: 'muted', textContent: ` — ${request.note}` }) : null,
-		]);
-	}));
-}
-
-function renderControls() {
-	const sprint = state.sprint;
-	document.title = `${sprint.title ?? 'Design sprint'} · design sprint`;
-	$('title').textContent = sprint.title ?? 'Design sprint';
-	$('goal').textContent = sprint.goal ?? '';
-	$('round').textContent = `Round ${sprint.round ?? 1}`;
-	const viewports = sprint.viewports ?? [390, 1280];
-	if (!viewports.includes(state.viewport)) state.viewport = viewports.at(-1);
-	$('viewports').replaceChildren(...viewports.map((width) => el('button', { type: 'button', textContent: `${width}px`, ariaPressed: String(width === state.viewport),
-		onclick: () => { state.viewport = width; render(true); } })));
-	const themes = sprint.themes ?? [];
-	$('theme-wrap').hidden = themes.length === 0;
-	if (themes.length && !themes.includes(state.theme)) state.theme = themes[0];
-	$('theme').replaceChildren(...themes.map((theme) => el('option', { value: theme, textContent: theme, selected: theme === state.theme })));
-}
-
-function render(force = false) {
-	if (!state.sprint) return;
-	const signature = JSON.stringify([state.sprint, state.viewport, state.theme, submitted()]);
-	if (force || signature !== state.signature) {
-		state.signature = signature;
-		const open = new Set([...document.querySelectorAll('details[open]')].map((details) => details.dataset.key));
-		const focused = document.activeElement?.dataset?.draft;
-		const selection = focused ? [document.activeElement.selectionStart, document.activeElement.selectionEnd] : null;
-		renderControls();
-		renderVariants();
-		renderDecisions();
-		for (const details of document.querySelectorAll('details[data-key]')) details.open = open.has(details.dataset.key);
-		const area = focused && document.querySelector(`textarea[data-draft="${CSS.escape(focused)}"]`);
-		if (area) { area.focus(); area.setSelectionRange(...selection); }
+function renderDynamic() {
+	const lanes = $('lanes');
+	if (lanes) {
+		const building = state.agent?.building;
+		const rows = building ? [...building.finished.map((lane) => `${lane.id}: ${lane.status === 'complete' ? 'ready' : lane.status}`), ...building.running.map((id) => `${id}: building`)] : [];
+		lanes.hidden = !rows.length;
+		renderWhenChanged('lanes', rows, () => lanes.replaceChildren(...rows.map((row) => el('li', { textContent: row }))));
 	}
-	refreshPicks();
-	renderHistory();
-	renderAnswer();
+	const rows = $('review-rows');
+	if (rows) {
+		const steps = currentSteps().filter((step) => step.kind !== 'review');
+		const lines = steps.map((step) => {
+			if (step.kind === 'waiting') return { id: step.id, text: `Decisions: still being built over ${step.variantId}`, missing: true };
+			const value = picks[pickTarget(step)];
+			return { id: step.id, text: `${step.title} → ${value ? pickLabel(step, value) : 'not picked yet'}`, missing: !value };
+		});
+		renderWhenChanged('review-rows', lines, () => rows.replaceChildren(...lines.map((line) => el('li', { className: line.missing ? 'missing' : '' }, [
+			line.text, ' ', el('a', { href: toHash(line.id), textContent: 'Change', onclick: (event) => { event.preventDefault(); go(line.id); } }),
+		]))));
+		$('review-block').textContent = canSubmit() ? '' : 'Every step needs a pick, and every question above needs an answer, before you submit.';
+	}
+	const delivery = $('delivery');
+	if (delivery) {
+		const submitted = state.feedback.findLast((event) => event.type === 'submit');
+		const text = received(submitted) ? 'The agent received your answer. Follow its progress at the top of the page.' : 'Sent. Waiting for the agent to pick it up.';
+		if (delivery.textContent !== text) delivery.textContent = text;
+	}
+}
+function renderFooter() {
+	const step = currentStep();
+	if (!step) {
+		$('footer').hidden = true;
+		state.signatures.footer = null;
+		return;
+	}
+	const steps = currentSteps();
+	const index = steps.findIndex((item) => item.id === step.id);
+	const next = steps[index + 1];
+	const previous = steps[index - 1];
+	const target = pickTarget(step);
+	const current = step.kind === 'review' ? answerText() : target ? pickLabel(step, picks[target]) : `Direction ${step.variantId}`;
+	renderWhenChanged('footer', [state.stepId, next?.id, next?.title, previous?.id, current, canSubmit(), state.busy], () => {
+		$('footer').hidden = false;
+		const action = step.kind === 'review'
+			? el('button', { type: 'button', id: 'submit', className: 'primary', textContent: 'Submit answer', disabled: !canSubmit() || state.busy, onclick: submitAll })
+			: el('button', { type: 'button', id: 'next', className: 'primary', textContent: `Next: ${next.title}`, disabled: step.kind === 'waiting' || !picks[target], onclick: () => go(next.id) });
+		$('footer').replaceChildren(el('div', { className: 'row' }, [
+			el('button', { type: 'button', id: 'back', textContent: 'Back', disabled: !previous, onclick: () => go(previous.id) }),
+			el('span', { id: 'footer-pick', className: 'muted', textContent: current ? `Picked: ${current}` : 'Nothing picked yet' }),
+			el('span', { className: 'spacer' }),
+			action,
+		]));
+	});
 }
 
+function mergeKeepingLocal(incoming) {
+	const ids = new Set(incoming.map((event) => event.id));
+	state.feedback = [...incoming, ...state.feedback.filter((event) => !ids.has(event.id))];
+}
 async function post(event) {
 	try {
 		const response = await fetch('/api/feedback', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(event) });
-		if (!response.ok) throw new Error((await response.json()).error);
-		const record = await response.json();
-		state.feedback.push(record);
-		renderHistory();
-		return record;
+		const body = await response.json().catch(() => ({}));
+		if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
+		mergeKeepingLocal([...state.feedback.filter((item) => item.id !== body.id), body]);
+		setStatus('');
+		return body;
 	} catch (error) {
-		$('send-status').textContent = `Not sent: ${error.message}. Use Copy answer.`;
+		setStatus(`Not sent: ${error.message}. Use Copy answer and paste it to the agent.`);
 		return null;
 	}
 }
-async function sendReprompt(target, area) {
-	const text = area.value.trim();
-	if (!text) { area.focus(); return; }
-	const record = await post({ type: 'reprompt', target, text });
-	if (record) { area.value = ''; delete drafts[target]; $('send-status').textContent = 'Sent. The agent will add or update a variant.'; }
+async function postPick(target) {
+	const option = picks[target];
+	if (!target || !option || sentPicks[target] === option) return true;
+	const record = await post({ type: 'pick', target, option });
+	if (record) sentPicks[target] = option;
+	return Boolean(record);
 }
-
-document.addEventListener('input', (event) => { const key = event.target.dataset?.draft; if (key) drafts[key] = event.target.value; });
-document.addEventListener('click', (event) => {
-	const button = event.target.closest('[data-reprompt]');
-	if (button) sendReprompt(button.dataset.reprompt, $(button.dataset.source));
-});
-$('theme').addEventListener('change', (event) => { state.theme = event.target.value; render(true); });
-$('copy').addEventListener('click', async () => {
-	const text = [answerText(), $('notes').value.trim()].filter(Boolean).join('\nNote: ');
-	await navigator.clipboard.writeText(text);
-	$('send-status').textContent = 'Copied.';
-});
-$('submit').addEventListener('click', async () => {
-	const answer = answerText();
-	if (!answer) { $('send-status').textContent = 'Pick at least one option, or pick “Do nothing”.'; return; }
-	const record = await post({ type: 'submit', text: answer, option: $('notes').value.trim() || undefined });
-	if (record) { $('send-status').textContent = 'Submitted. The agent will apply your picks.'; render(true); }
-});
-
-async function poll() {
+function choose(target, value) {
+	picks[target] = value;
+	savePicks();
+	render();
+}
+async function go(stepId) {
+	if (!stepId || stepId === state.stepId || state.busy) return;
+	state.busy = true;
 	try {
-		const [sprint, feedback] = await Promise.all([fetch('/api/sprint').then((r) => r.ok ? r.json() : Promise.reject(new Error('no sprint'))), fetch('/api/feedback').then((r) => r.json())]);
-		const first = !state.sprint;
-		if (first) state.filesOrigin = (await fetch('/api/config').then((r) => r.json())).filesOrigin;
-		state.sprint = sprint;
-		state.feedback = feedback;
-		if (first) picks = loadPicks();
-		$('offline').hidden = true;
+		const leaving = currentStep();
+		if (leaving) await postPick(pickTarget(leaving));
+		state.stepId = stepId;
+		if (hashId() !== stepId) history.pushState(null, '', toHash(stepId));
+	} finally {
+		state.busy = false;
 		render();
-	} catch {
-		$('offline').hidden = false;
+		$('step-title')?.focus({ preventScroll: true });
 	}
 }
+async function sendReprompt(target) {
+	const text = (drafts[target] ?? '').trim();
+	if (!text) { $(domId(target))?.focus(); return; }
+	if (!await post({ type: 'reprompt', target, text })) return;
+	delete drafts[target];
+	const area = $(domId(target));
+	if (area) area.value = '';
+	render();
+}
+async function sendAnswer(question, option) {
+	const text = (drafts[`answer:${question.id}`] ?? '').trim();
+	if (!option && !text) { $(domId(`answer:${question.id}`))?.focus(); setStatus('Pick an option or write an answer.'); return; }
+	if (!await post({ type: 'answer', target: `question:${question.id}`, ...(option ? { option } : {}), ...(text ? { text } : {}) })) return;
+	delete drafts[`answer:${question.id}`];
+	render();
+}
+async function submitAll() {
+	if (!canSubmit() || state.busy) return;
+	state.busy = true;
+	renderFooter();
+	try {
+		for (const step of currentSteps()) if (!await postPick(pickTarget(step))) return;
+		const answers = {};
+		for (const question of withSubmitQuestions()) {
+			const text = (drafts[`answer:${question.id}`] ?? '').trim();
+			const option = choices[question.id];
+			answers[question.id] = { ...(option ? { option } : {}), ...(text ? { text } : {}) };
+		}
+		const note = (drafts.notes ?? '').trim();
+		await post({ type: 'submit', text: answerText(), ...(note ? { option: note } : {}), ...(Object.keys(answers).length ? { answers } : {}) });
+	} finally {
+		state.busy = false;
+		render();
+	}
+}
+async function copyAnswer() {
+	const submitted = state.feedback.findLast((event) => event.type === 'submit');
+	const text = submitted ? [submitted.text, submitted.option].filter(Boolean).join('\nNote: ') : [answerText(), (drafts.notes ?? '').trim()].filter(Boolean).join('\nNote: ');
+	try {
+		await navigator.clipboard.writeText(text || 'nothing picked');
+		setStatus('Copied.');
+	} catch {
+		setStatus('Copy failed. Select the answer and copy it.');
+	}
+}
+
+async function poll() {
+	if (state.stopped || state.polling) return;
+	state.polling = true;
+	try {
+		// Config comes first: once the server has sent a done state it stops, so a later request would fail.
+		if (!state.sprintId) {
+			const config = await (await fetch('/api/config', { cache: 'no-store' })).json();
+			state.filesOrigin = config.filesOrigin;
+			state.sprintId = config.sprintId;
+			state.maxText = config.maxText;
+		}
+		const response = await fetch('/api/state', { cache: 'no-store' });
+		if (!response.ok) throw new Error(`HTTP ${response.status}`);
+		const data = await response.json();
+		if (!state.sprint) {
+			state.sprint = data.sprint;
+			Object.assign(picks, loadPicks());
+			for (const event of data.feedback) {
+				if (event.type !== 'pick') continue;
+				picks[event.target] ??= event.option;
+				sentPicks[event.target] = event.option;
+			}
+		}
+		state.sprint = data.sprint;
+		state.agent = data.agent;
+		mergeKeepingLocal(data.feedback);
+		$('offline').hidden = true;
+		render();
+		if (state.phase === 'done') { state.stopped = true; clearInterval(state.timer); }
+	} catch {
+		$('offline').hidden = state.phase === 'done';
+	} finally {
+		state.polling = false;
+	}
+}
+document.addEventListener('input', (event) => {
+	const key = event.target.dataset?.draft;
+	if (!key) return;
+	drafts[key] = event.target.value;
+	renderFooter();
+	renderDynamic();
+});
+window.addEventListener('popstate', () => {
+	if (state.phase !== 'choosing') return;
+	const step = currentSteps().find((item) => item.id === hashId());
+	if (step && step.id !== state.stepId) {
+		const leaving = currentStep();
+		state.stepId = step.id;
+		if (leaving) postPick(pickTarget(leaving));
+		render();
+	}
+});
 poll();
-setInterval(poll, 2000);
+state.timer = setInterval(poll, 1000);
 </script>
 </body>
 </html>

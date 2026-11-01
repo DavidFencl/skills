@@ -1,15 +1,17 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { setTimeout as sleep } from 'node:timers/promises';
 import test from 'node:test';
-import { allocateLanes, buildCommand, outsideChanges, parseDescriptor, resolveRoster, runLane, snapshotChanges } from './lanes.mjs';
+import { allocateLanes, buildCommand, outsideChanges, parseDescriptor, resolveRoster, runLane, runLanes, snapshotChanges } from './lanes.mjs';
 
 function tempDir(t) {
 	const dir = mkdtempSync(join(tmpdir(), 'design-sprint-lanes-'));
-	t.after(() => rmSync(dir, { recursive: true, force: true }));
+	t.after(() => rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }));
 	return dir;
 }
 const isAlive = (pid) => {
@@ -224,4 +226,53 @@ test('a nested repository and a file renamed into a lane are both handled', (t) 
 	git(repo, 'mv', 'src/shared.tsx', 'src/variant-A/shared.tsx');
 	const after = snapshotChanges(repo);
 	assert.deepEqual(outsideChanges(before, after, ['src/variant-A']), ['nested', 'src/shared.tsx']);
+});
+
+test('progress.json moves lanes from running to finished', async (t) => {
+	const sprintDir = tempDir(t);
+	mkdirSync(join(sprintDir, 'lanes'));
+	writeFileSync(join(sprintDir, 'lanes', 'A.prompt.md'), 'build it');
+	const spawnImpl = (command, args) => {
+		const child = new EventEmitter();
+		child.stdout = new EventEmitter();
+		child.stderr = new EventEmitter();
+		child.stdout.destroy = () => {};
+		child.stderr.destroy = () => {};
+		child.pid = 2147483647;
+		child.kill = () => {};
+		const code = Number(args[1]);
+		setTimeout(() => {
+			child.emit('exit', code, null);
+			child.emit('close', code, null);
+		}, Number(args[0]));
+		return child;
+	};
+	const lane = (id, delay, code) => ({ id, model: 'claude:opus', promptFile: 'lanes/A.prompt.md', command: { command: 'fake', args: [String(delay), String(code)] } });
+	const pending = runLanes([lane('A', 80, 0), lane('B', 2000, 3)], {
+		sprintDir, cwd: sprintDir, check: () => null, spawnImpl, progressIntervalMs: 40,
+	});
+	const file = join(sprintDir, 'lanes', 'progress.json');
+	const read = () => JSON.parse(readFileSync(file, 'utf8'));
+	const first = read();
+	assert.deepEqual(first.running, ['A', 'B']);
+	assert.deepEqual(first.finished, []);
+	assert.ok(!Number.isNaN(Date.parse(first.at)));
+	const waitFor = async (pred) => {
+		let last;
+		for (let attempt = 0; attempt < 100; attempt += 1) {
+			last = read();
+			if (pred(last)) return last;
+			await sleep(30);
+		}
+		throw new Error(`progress did not match: ${JSON.stringify(last)}`);
+	};
+	const mid = await waitFor((progress) => progress.finished.some((item) => item.id === 'A' && item.status === 'complete') && progress.running.includes('B') && !progress.running.includes('A'));
+	assert.deepEqual(mid.running, ['B']);
+	const refreshed = await waitFor((progress) => progress.running.includes('B') && progress.at !== mid.at);
+	assert.ok(refreshed.running.includes('B'));
+	const receipts = await pending;
+	assert.deepEqual(receipts.map((receipt) => [receipt.id, receipt.status]), [['A', 'complete'], ['B', 'dropout']]);
+	const end = read();
+	assert.deepEqual(end.running, []);
+	assert.deepEqual(end.finished, [{ id: 'A', status: 'complete' }, { id: 'B', status: 'dropout' }]);
 });

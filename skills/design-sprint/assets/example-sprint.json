@@ -1,9 +1,12 @@
 {
 	"title": "Organizer applications list",
 	"goal": "Organizers review and accept entries quickly; decide the list's structure and two styling questions.",
+	"mode": "redesign",
 	"round": 1,
 	"viewports": [390, 1280],
 	"themes": ["dark", "light"],
+	"blind": false,
+	"status": { "message": "Waiting for your picks." },
 	"current": { "image": "current.png", "note": "Today's applications table." },
 	"variants": [
 		{
@@ -37,5 +40,19 @@
 			]
 		}
 	],
-	"requests": []
+	"requests": [],
+	"questions": [
+		{
+			"id": "implement",
+			"text": "Implement the winner now?",
+			"withSubmit": true,
+			"options": [{ "id": "now", "label": "Yes, implement it next" }, { "id": "later", "label": "Not now", "recommended": true }]
+		},
+		{
+			"id": "cleanup",
+			"text": "What should happen to the preview files?",
+			"withSubmit": true,
+			"options": [{ "id": "delete", "label": "Delete them", "recommended": true }, { "id": "keep", "label": "Keep them" }]
+		}
+	]
 }
