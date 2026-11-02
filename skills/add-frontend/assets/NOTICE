@@ -1,0 +1,9 @@
+frontend/ and frontend_server.py are derived from custom-frontend/raw-stream in
+https://github.com/luxonis/oak-examples (commit 08290245e82b2f9410fbbb9e994ab3c18c8171bf),
+Copyright Luxonis, licensed under the Apache License, Version 2.0:
+https://www.apache.org/licenses/LICENSE-2.0
+
+Changes: services are called through a typed hook instead of being polled, the page opens the
+streams listed in streams.ts and has a controls card, the layout is responsive, the Vite fix
+reads the pipeline library version from package.json and the unused global define is gone, and
+the server falls back to index.html for browser routes and stays off in standalone mode.
