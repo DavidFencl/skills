@@ -4,6 +4,7 @@ Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`,
 
 | Skill | Description |
 | --- | --- |
+| [`add-frontend`](skills/add-frontend/SKILL.md) | Adds a custom web page to a DepthAI v3 (Luxonis OAK camera) Python app. It copies a React and Vite template built on `@luxonis/depthai-viewer-common` and `@luxonis/ui-components`, adds one control per Python service, and edits the Python code so the app serves the page in peripheral mode, while `oakapp.toml` serves it on an OAK4 in standalone mode. |
 | [`design-sprint`](skills/design-sprint/SKILL.md) | Focused UI design sprint, run like an arena. Several models (Claude, Codex, Grok, pi models) build N variants of a screen, a component or a new feature from your design system as dev-only previews, plus single-property decision options. A local page walks you through the choices one step at a time: pick, keep the current version ("Do nothing" is always offered), or re-prompt any variant. It shows what the agent is doing and carries its questions, so you stay on the page until you submit. |
 | [`ui-changelog`](skills/ui-changelog/SKILL.md) | Visual changelog for frontend work. Maps the git diff to the pages, states and viewports it touches, captures before/after screenshots of the real app at both refs, circles what is new or modified with numbered close-ups, and writes an HTML review report plus PR-ready Markdown. It mocks missing or unsafe backends (REST, GraphQL, WebSocket, SSE, images, third-party scripts) with realistic data drafted from the project's own types. |
 
@@ -15,6 +16,18 @@ git clone https://github.com/DavidFencl/skills.git ~/skills
 ```
 
 The installer symlinks each skill into `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills` and `~/.grok/skills`, for each harness that is installed, honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR` and `GROK_HOME` when set. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
+
+## add-frontend
+
+Ask the agent to "add a frontend to this OAK app" in a DepthAI v3 app. The agent then:
+
+1. Reads the app: its entry script, the topics and services it registers with `RemoteConnection`, and its `oakapp.toml`.
+2. Checks the `@luxonis/*` versions that `luxonis/oak-examples` pins today, through the Luxonis Context MCP server or `gh`.
+3. Runs `scripts/scaffold.mjs`, which copies the template to `frontend/`, writes `frontend_server.py` next to the entry script, and adds `[static_frontend]` to `oakapp.toml`.
+4. Edits the Python app to call `serve_frontend()` and to pass `serveFrontend=False`, then builds one control per service on the page.
+5. Builds the page and runs `scripts/check.mjs`, which fails when the Python app and the page disagree on a stream or service name, or when either mode would serve no page.
+
+In peripheral mode the app serves the page at `http://localhost:8082`. On an OAK4 in standalone mode, the `luxonis/oakapp-base` image serves it. The template is derived from `custom-frontend/raw-stream` in `luxonis/oak-examples` (Apache-2.0); see [`assets/NOTICE`](skills/add-frontend/assets/NOTICE). Details are in [`references/frontend.md`](skills/add-frontend/references/frontend.md) and [`references/standalone.md`](skills/add-frontend/references/standalone.md).
 
 ## design-sprint
 
