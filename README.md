@@ -1,6 +1,6 @@
 # Skills
 
-Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`, and works in any harness that loads the [Agent Skills](https://agentskills.io) format: Claude Code, Codex, pi and Grok.
+Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`, and works in any harness that loads the [Agent Skills](https://agentskills.io) format: Orca, Claude Code, Codex, pi and Grok.
 
 | Skill | Description |
 | --- | --- |
@@ -15,7 +15,7 @@ git clone https://github.com/DavidFencl/skills.git ~/skills
 ~/skills/install-globally.sh
 ```
 
-The installer symlinks each skill into `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills` and `~/.grok/skills`, for each harness that is installed, honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR` and `GROK_HOME` when set. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
+The installer symlinks each skill into `~/.agents/skills` for Orca and shared discovery, plus `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills` and `~/.grok/skills`, for each harness that is installed, honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR` and `GROK_HOME` when set. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
 
 ## add-frontend
 
