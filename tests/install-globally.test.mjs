@@ -54,7 +54,7 @@ test('a skill an enabled Luxonis pack provides is not linked, and the old link t
 
   assert.equal(existsSync(linkAt('.claude', 'ui-changelog')), false, 'old link to this repo removed');
   assert.equal(existsSync(linkAt('.codex', 'ui-changelog')), false, 'never linked into another harness');
-  assert.equal(readlinkSync(linkAt('.claude', 'design-sprint')), skill('design-sprint'), 'skills no pack provides are still linked');
+  assert.equal(readlinkSync(linkAt('.claude', 'add-frontend')), skill('add-frontend'), 'skills no pack provides are still linked');
   assert.match(stdout, /removed, the Luxonis pack's copy replaces it/);
 });
 
