@@ -14,9 +14,9 @@ git clone https://github.com/DavidFencl/skills.git ~/skills
 ~/skills/install-globally.sh
 ```
 
-The installer symlinks each skill into `~/.agents/skills` for Orca and shared discovery, plus `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills` and `~/.grok/skills`, for each harness that is installed, honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR` and `GROK_HOME` when set. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
+The installer symlinks each skill into the folders the `luxonis` CLI installs into. These are `~/.agents/skills`, which Orca, Codex and pi read, plus `~/.claude/skills` and `~/.grok/skills` for each harness that is installed, honoring `CLAUDE_CONFIG_DIR` and `GROK_HOME` when set. It removes its own earlier links from `~/.codex/skills` and `~/.pi/agent/skills`, which would show Codex and pi a second copy. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
 
-The Luxonis version of a skill always wins. The installer reads `luxonis skills status`, which lists the skills the `luxonis` CLI installed on this machine and the pack skills its last good sync skipped because another copy held the name. It never links a skill the CLI installed, and it removes its own earlier links to it. For a skipped pack skill, it removes its own links only when no other copy holds the name, and then `luxonis tick` installs the pack's copy. If the status cannot be read, a skill that already has a copy in `~/.agents/skills` is not linked anywhere. The installer changes only its own links and dangling links, so it never replaces the CLI's copies or any other copy already in place.
+The Luxonis version of a skill always wins. The installer reads `luxonis skills status`, which lists the skills the CLI installed on this machine and the pack skills it skipped because another copy held the name. It removes its own links to a skill the CLI installed. For a skipped pack skill, it removes its own links, runs `luxonis tick`, and links its copy again only if the CLI still did not install the pack's copy. The installer changes only its own links and dangling links, so it never replaces the CLI's copies or any other copy already in place.
 
 ## add-frontend
 

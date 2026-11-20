@@ -1,36 +1,40 @@
 #!/usr/bin/env bash
 #
-# install-globally.sh: symlink every skill in skills/ into the skill folder of each agent
-# harness installed on this machine, so updates to this repo apply everywhere.
+# install-globally.sh: symlink every skill in skills/ into the folders the agent harnesses on
+# this machine load skills from, so updates to this repo apply everywhere. They are the folders
+# the luxonis CLI installs into.
 #
-#   Claude Code  ${CLAUDE_CONFIG_DIR:-~/.claude}/skills/
-#   Codex        ${CODEX_HOME:-~/.codex}/skills/
-#   pi           ${PI_CODING_AGENT_DIR:-~/.pi/agent}/skills/
-#   Grok         ${GROK_HOME:-~/.grok}/skills/
-#   Orca/shared  ~/.agents/skills/
+#   Orca, Codex, pi  ~/.agents/skills/
+#   Claude Code      ${CLAUDE_CONFIG_DIR:-~/.claude}/skills/
+#   Grok             ${GROK_HOME:-~/.grok}/skills/
 #
-# A harness is skipped when its config directory does not exist. Safe to re-run. The installer
-# changes only its own links, the symlinks that resolve to this repo's skills, and dangling
-# symlinks. Anything else at a destination, such as a real directory or a link to another copy,
-# is left untouched. Runs on bash 3.2 (macOS) and later.
+# Codex and pi read ~/.agents/skills, so a link in ~/.codex/skills or ~/.pi/agent/skills would
+# show them a second copy. The installer removes its own earlier links there.
 #
-# The Luxonis version of a skill always wins. When the luxonis CLI installed a skill on this
-# machine, or its last good sync skipped a pack skill because this repo's links held the name,
-# the installer removes its own links so the CLI's copy takes the name.
+# A folder is skipped when its harness is not installed. Safe to re-run. The installer changes
+# only its own links, the symlinks that resolve to this repo's skills, and dangling symlinks.
+# Anything else, such as a real directory or a link to another copy, is left untouched. Runs on
+# bash 3.2 (macOS) and later.
+#
+# The Luxonis version of a skill always wins. The installer removes its own links to a skill the
+# luxonis CLI installed. When the CLI reports that another copy kept a pack skill out, the
+# installer removes its own links, runs `luxonis tick`, and links its copy again only if the CLI
+# still did not install the pack's copy.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
-HARNESSES="agents claude codex pi grok"
+TARGETS="agents claude grok"
+RETIRED="codex pi"
 
 # Plain functions instead of associative arrays, so the script runs on macOS's bash 3.2.
 harness_name() {
   case "$1" in
-    agents) echo "Orca / Agent Skills" ;;
+    agents) echo "Orca, Codex and pi" ;;
     claude) echo "Claude Code" ;;
+    grok) echo "Grok" ;;
     codex) echo "Codex" ;;
     pi) echo "pi" ;;
-    grok) echo "Grok" ;;
   esac
 }
 # Each harness's own override variable wins over its default directory.
@@ -38,19 +42,16 @@ harness_root() {
   case "$1" in
     agents) echo "${HOME}/.agents" ;;
     claude) echo "${CLAUDE_CONFIG_DIR:-${HOME}/.claude}" ;;
+    grok) echo "${GROK_HOME:-${HOME}/.grok}" ;;
     codex) echo "${CODEX_HOME:-${HOME}/.codex}" ;;
     pi) echo "${PI_CODING_AGENT_DIR:-${HOME}/.pi/agent}" ;;
-    grok) echo "${GROK_HOME:-${HOME}/.grok}" ;;
   esac
-}
-skills_dir_of() {
-  echo "$(harness_root "$1")/skills"
 }
 
 # "installed <name>" for each skill the luxonis CLI installed on this machine, and
-# "blocked <name>" for each pack skill its last good sync skipped because another copy held the
-# name. `skills status` reads only local state. Prints "unknown" when the status cannot be read,
-# and nothing when the CLI is not installed.
+# "blocked <name>" for each pack skill it skipped because another copy held the name.
+# `skills status` reads only local state. Prints "unknown" when the status cannot be read, and
+# nothing when the CLI is not installed.
 luxonis_status() {
   command -v luxonis >/dev/null 2>&1 || return 0
   if ! command -v node >/dev/null 2>&1; then
@@ -70,9 +71,7 @@ luxonis_status() {
         return;
       }
       for (const skill of status.installed ?? []) console.log(`installed ${skill.name}`);
-      // A signed-out or failed sync keeps the conflicts of an older run, which may be stale.
-      if (status.lastRun?.feed !== "enabled") return;
-      for (const conflict of [...(status.conflicts ?? []), ...(status.lastRun.conflicts ?? [])])
+      for (const conflict of [...(status.conflicts ?? []), ...(status.lastRun?.conflicts ?? [])])
         if (conflict.reason === "external-owner") console.log(`blocked ${conflict.name}`);
     });
   ' || echo unknown
@@ -112,113 +111,118 @@ link_state() {
   fi
 }
 
-# The first harness path that holds a copy of the skill this repo did not install.
-foreign_copy() {
-  local name="$1"
-  local target="$2"
-  local harness
-  local link
-
-  for harness in $HARNESSES; do
-    link="$(skills_dir_of "$harness")/${name}"
-    if [ "$(link_state "$target" "$link")" = foreign ]; then
-      echo "$link"
-      return 0
-    fi
-  done
-  return 1
-}
-
-# installed: the CLI's copy is here, so this repo's links go.
-# blocked: this repo's links are all that keep the CLI from installing its copy, so they go.
-# held: the status is unknown and ~/.agents/skills already has another copy, so nothing is linked.
-# link: this repo's copy is linked wherever the name is free.
-plan_for() {
-  local name="$1"
-  local target="$2"
-  local holder
-
-  if status_has "installed ${name}"; then
-    echo installed
-  elif status_has "blocked ${name}"; then
-    if holder="$(foreign_copy "$name" "$target")"; then
-      echo "⚠  ${name}: ${holder} keeps the Luxonis copy out, so this repo's links stay" >&2
-      echo link
-    else
-      echo blocked
-    fi
-  elif status_has unknown && [ "$(link_state "$target" "$(skills_dir_of agents)/${name}")" = foreign ]; then
-    echo held
-  else
-    echo link
-  fi
-}
-
-PLANS=""
-for skill_dir in "$SCRIPT_DIR"/skills/*/; do
-  [ -e "${skill_dir}SKILL.md" ] || continue
-  name="$(basename "$skill_dir")"
-  PLANS="${PLANS}${name} $(plan_for "$name" "${skill_dir%/}")
-"
-done
-
-plan_of() {
-  printf '%s' "$PLANS" | sed -n "s/^$1 //p"
+# The skill's name from its SKILL.md frontmatter, which is how the CLI and the harnesses know it.
+skill_name() {
+  local name
+  name="$(awk '/^name:/ { sub(/^name:[ \t]*/, ""); gsub(/["\047\r]/, ""); print; exit }' "$1/SKILL.md")"
+  echo "${name:-$(basename "$1")}"
 }
 
 REPO_SKILLS="$(resolve "${SCRIPT_DIR}/skills")"
 
-for harness in $HARNESSES; do
-  root="$(harness_root "$harness")"
-  skills_dir="$(skills_dir_of "$harness")"
-  if [ ! -d "$root" ]; then
-    echo "$(harness_name "$harness"): not installed (${root} missing), skipped"
-    continue
+# The skills folder of a harness, when the installer may change it.
+usable_dir() {
+  local root
+  local dir
+  root="$(harness_root "$1")"
+  dir="${root}/skills"
+  [ -d "$root" ] || return 1
+  [ -L "$dir" ] && [ ! -e "$dir" ] && return 1
+  [ -n "$REPO_SKILLS" ] && [ "$(resolve "$dir")" = "$REPO_SKILLS" ] && return 1
+  echo "$dir"
+}
+
+DIRS=""
+for harness in $TARGETS; do
+  if dir="$(usable_dir "$harness")"; then
+    mkdir -p "$dir"
+    DIRS="${DIRS}${dir}
+"
+    echo "$(harness_name "$harness") → ${dir}"
+  else
+    echo "$(harness_name "$harness"): skipped, $(harness_root "$harness")/skills is missing, dangling or this repo's skills folder"
   fi
-  if [ -L "$skills_dir" ] && [ ! -e "$skills_dir" ]; then
-    echo "$(harness_name "$harness"): ${skills_dir} is a dangling symlink, skipped"
-    continue
-  fi
-  if [ "$(resolve "$skills_dir")" = "$REPO_SKILLS" ]; then
-    echo "$(harness_name "$harness"): ${skills_dir} is this repo's skills folder, skipped"
-    continue
-  fi
-  echo "$(harness_name "$harness") → ${skills_dir}"
-  mkdir -p "$skills_dir"
-  for skill_dir in "$SCRIPT_DIR"/skills/*/; do
-    [ -e "${skill_dir}SKILL.md" ] || continue
-    name="$(basename "$skill_dir")"
-    target="${skill_dir%/}"
-    link="${skills_dir}/${name}"
-    state="$(link_state "$target" "$link")"
-    plan="$(plan_of "$name")"
-    case "$plan" in
-      installed | blocked)
-        case "$state" in
-          own | dangling)
-            rm "$link"
-            if [ "$plan" = blocked ]; then
-              echo "  ✗  ${link}: removed, run luxonis tick to install the Luxonis copy"
-            else
-              echo "  ✗  ${link}: removed, the Luxonis copy is installed"
-            fi
-            ;;
-          *) echo "  ↷  skipping ${name}: the luxonis CLI installs it" ;;
-        esac
-        ;;
-      held) echo "  ↷  skipping ${name}: $(skills_dir_of agents)/${name} already holds a copy" ;;
+done
+
+link_free() {
+  local target="$1"
+  local dir
+  local link
+
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    link="${dir}/$(basename "$target")"
+    case "$(link_state "$target" "$link")" in
+      foreign) echo "  ⚠  skipping ${link}: it holds a copy this repo did not install" ;;
       *)
-        case "$state" in
-          foreign) echo "  ⚠  skipping ${link}: it holds a copy this repo did not install" ;;
-          *)
-            ln -sfn "$target" "$link"
-            echo "  ✓  ${link} → ${target}"
-            ;;
-        esac
+        ln -sfn "$target" "$link"
+        echo "  ✓  ${link} → ${target}"
         ;;
     esac
+  done <<< "$DIRS"
+}
+
+remove_own() {
+  local target="$1"
+  local reason="$2"
+  local dir
+  local link
+
+  while IFS= read -r dir; do
+    [ -n "$dir" ] || continue
+    link="${dir}/$(basename "$target")"
+    case "$(link_state "$target" "$link")" in
+      own | dangling)
+        rm "$link"
+        echo "  ✗  ${link}: removed, ${reason}"
+        ;;
+    esac
+  done <<< "$DIRS"
+}
+
+BLOCKED=""
+for skill_dir in "$SCRIPT_DIR"/skills/*/; do
+  [ -e "${skill_dir}SKILL.md" ] || continue
+  target="${skill_dir%/}"
+  name="$(skill_name "$target")"
+  if status_has "installed ${name}"; then
+    remove_own "$target" "the Luxonis copy of ${name} is installed"
+    echo "  ↷  ${name}: the luxonis CLI installed its copy"
+  elif status_has "blocked ${name}"; then
+    remove_own "$target" "so the luxonis CLI can install ${name}"
+    BLOCKED="${BLOCKED}${target}
+"
+  else
+    link_free "$target"
+  fi
+
+  for harness in $RETIRED; do
+    root="$(harness_root "$harness")"
+    link="${root}/skills/$(basename "$target")"
+    [ -d "$root" ] && [ "$(resolve "${root}/skills")" != "$REPO_SKILLS" ] || continue
+    if [ "$(link_state "$target" "$link")" = own ]; then
+      rm "$link"
+      echo "  ✗  ${link}: removed, $(harness_name "$harness") reads ~/.agents/skills"
+    fi
   done
 done
+
+if [ -n "$BLOCKED" ]; then
+  echo ""
+  echo "Running luxonis tick to install the Luxonis copies"
+  luxonis tick >/dev/null 2>&1 || echo "⚠  luxonis tick reported a problem, see luxonis skills status"
+  STATUS="$(luxonis_status)"
+  while IFS= read -r target; do
+    [ -n "$target" ] || continue
+    name="$(skill_name "$target")"
+    if status_has "installed ${name}"; then
+      echo "  ✓  ${name}: the Luxonis copy is installed"
+    else
+      echo "  ⚠  ${name}: the Luxonis copy is still not installed, so this repo's copy is linked again"
+      link_free "$target"
+    fi
+  done <<< "$BLOCKED"
+fi
 
 echo ""
 echo "Done. Restart running agent sessions to pick up new skills."
