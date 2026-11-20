@@ -112,37 +112,62 @@ link_state() {
 }
 
 # The skill's name from its SKILL.md frontmatter, which is how the CLI and the harnesses know it.
+# Quotes, a trailing comment and trailing spaces are dropped, as a YAML parser drops them.
 skill_name() {
   local name
-  name="$(awk '/^name:/ { sub(/^name:[ \t]*/, ""); gsub(/["\047\r]/, ""); print; exit }' "$1/SKILL.md")"
+  name="$(awk '
+    { sub(/\r$/, "") }
+    NR == 1 { if ($0 != "---") exit; next }
+    /^---[ \t]*$/ { exit }
+    /^name:/ { sub(/^name:[ \t]*/, ""); sub(/[ \t]+#.*$/, ""); sub(/[ \t]+$/, ""); gsub(/["\047]/, ""); print; exit }
+  ' "$1/SKILL.md")"
   echo "${name:-$(basename "$1")}"
 }
 
 REPO_SKILLS="$(resolve "${SCRIPT_DIR}/skills")"
 
-# The skills folder of a harness, when the installer may change it.
+# The skills folder of a harness, when the installer may change it. ~/.agents/skills is created
+# when Codex or pi is installed, since both read it.
 usable_dir() {
   local root
   local dir
   root="$(harness_root "$1")"
   dir="${root}/skills"
-  [ -d "$root" ] || return 1
+  if [ ! -d "$root" ]; then
+    [ "$1" = agents ] || return 1
+    [ -d "$(harness_root codex)" ] || [ -d "$(harness_root pi)" ] || return 1
+  fi
   [ -L "$dir" ] && [ ! -e "$dir" ] && return 1
   [ -n "$REPO_SKILLS" ] && [ "$(resolve "$dir")" = "$REPO_SKILLS" ] && return 1
   echo "$dir"
 }
 
 DIRS=""
+AGENTS_DIR=""
 for harness in $TARGETS; do
   if dir="$(usable_dir "$harness")"; then
     mkdir -p "$dir"
     DIRS="${DIRS}${dir}
 "
+    [ "$harness" = agents ] && AGENTS_DIR="$dir"
     echo "$(harness_name "$harness") → ${dir}"
   else
     echo "$(harness_name "$harness"): skipped, $(harness_root "$harness")/skills is missing, dangling or this repo's skills folder"
   fi
 done
+
+# True when a folder is, or resolves to, a folder the installer links into or this repo's skills.
+is_linked_dir() {
+  local resolved
+  local dir
+  resolved="$(resolve "$1")"
+  [ -n "$resolved" ] || return 1
+  [ "$resolved" = "$REPO_SKILLS" ] && return 0
+  while IFS= read -r dir; do
+    [ -n "$dir" ] && [ "$(resolve "$dir")" = "$resolved" ] && return 0
+  done <<< "$DIRS"
+  return 1
+}
 
 link_free() {
   local target="$1"
@@ -196,10 +221,13 @@ for skill_dir in "$SCRIPT_DIR"/skills/*/; do
     link_free "$target"
   fi
 
+  # Old Codex and pi links go only once ~/.agents/skills has this repo's skills for them.
+  [ -n "$AGENTS_DIR" ] || continue
   for harness in $RETIRED; do
     root="$(harness_root "$harness")"
     link="${root}/skills/$(basename "$target")"
-    [ -d "$root" ] && [ "$(resolve "${root}/skills")" != "$REPO_SKILLS" ] || continue
+    [ -d "${root}/skills" ] || continue
+    is_linked_dir "${root}/skills" && continue
     if [ "$(link_state "$target" "$link")" = own ]; then
       rm "$link"
       echo "  ✗  ${link}: removed, $(harness_name "$harness") reads ~/.agents/skills"

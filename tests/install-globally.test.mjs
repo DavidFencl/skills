@@ -229,3 +229,46 @@ test('a skill is matched to the CLI by the name in its SKILL.md, not its folder 
 
   assert.equal(existsSync(linkAt('.claude', 'tool')), false);
 });
+
+test('a trailing comment or space on the name line does not change the name', () => {
+  writeSkill(path.join(repo, 'skills', 'tool'), "'shared-tool'   # also in a pack ");
+  status({ installed: ['shared-tool'] });
+  symlinkSync(skill('tool'), linkAt('.claude', 'tool'));
+
+  install();
+
+  assert.equal(existsSync(linkAt('.claude', 'tool')), false);
+});
+
+test('a Codex or pi skills folder that links to ~/.agents/skills keeps the links made there', () => {
+  status();
+  rmSync(path.join(home, '.codex', 'skills'), { recursive: true });
+  symlinkSync('../.agents/skills', path.join(home, '.codex', 'skills'));
+  rmSync(path.join(home, '.pi', 'agent', 'skills'), { recursive: true });
+  symlinkSync(path.join(home, '.agents', 'skills'), path.join(home, '.pi', 'agent', 'skills'));
+
+  install();
+
+  assert.equal(readlinkSync(linkAt('.agents', 'mine')), skill('mine'));
+});
+
+test('without ~/.agents, the folder is created for Codex and pi before their old links go', () => {
+  status();
+  rmSync(path.join(home, '.agents'), { recursive: true });
+  symlinkSync(skill('mine'), linkAt('.codex', 'mine'));
+
+  install();
+
+  assert.equal(readlinkSync(linkAt('.agents', 'mine')), skill('mine'), 'Codex and pi still see the skill');
+  assert.equal(existsSync(linkAt('.codex', 'mine')), false, 'old Codex link removed');
+});
+
+test('without ~/.agents, Codex or pi, no ~/.agents folder is created', () => {
+  status();
+  for (const root of ['.agents', '.codex', '.pi']) rmSync(path.join(home, root), { recursive: true });
+
+  install();
+
+  assert.equal(existsSync(path.join(home, '.agents')), false);
+  assert.equal(readlinkSync(linkAt('.claude', 'mine')), skill('mine'));
+});
