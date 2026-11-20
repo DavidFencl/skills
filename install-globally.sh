@@ -12,10 +12,66 @@
 # A harness is skipped when its config directory does not exist. Safe to re-run. A destination
 # that already exists as a real directory (not a symlink) is left untouched. Runs on bash 3.2
 # (macOS) and later.
+#
+# The Luxonis version of a skill always wins. A skill that an enabled Luxonis Knowledge pack
+# provides is never linked from this repo, and an earlier link to this repo's copy is removed,
+# so the luxonis CLI installs the pack's copy on its next sync.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# One skill name per line, from the packs that are on for this person and the skills added on
+# this machine. Prints nothing when the luxonis CLI is missing, signed out or offline.
+luxonis_skills() {
+  command -v luxonis >/dev/null 2>&1 || return 0
+  if ! command -v node >/dev/null 2>&1; then
+    echo "⚠  node not found, so Luxonis pack skills are not checked" >&2
+    return 0
+  fi
+  luxonis skills list --json 2>/dev/null | node -e '
+    let text = "";
+    process.stdin.on("data", (chunk) => (text += chunk)).on("end", () => {
+      try {
+        const { packs = [], installed = [] } = JSON.parse(text);
+        const names = new Set(installed.map((skill) => skill.name));
+        for (const pack of packs) if (pack.enabled) for (const name of pack.skills) names.add(name);
+        if (names.size) console.log([...names].join("\n"));
+      } catch {
+        console.error("⚠  luxonis skills list failed, so Luxonis pack skills are not checked");
+      }
+    });
+  ' || true
+}
+
+LUXONIS_SKILLS="$(luxonis_skills)"
+
+provided_by_luxonis() {
+  case "
+${LUXONIS_SKILLS}
+" in
+    *"
+$1
+"*) return 0 ;;
+  esac
+  return 1
+}
+
+yield_to_luxonis() {
+  local target="$1"
+  local link="$2"
+  local current
+
+  if [ -L "$link" ]; then
+    current="$(readlink "$link")"
+    if [ "$current" = "$target" ] || [ "$current" = "${target}/" ]; then
+      rm "$link"
+      echo "  ✗  ${link}: removed, the Luxonis pack's copy replaces it after luxonis tick"
+      return 0
+    fi
+  fi
+  echo "  ↷  skipping $(basename "$link"): a Luxonis pack provides it"
+}
 
 install_link() {
   local target="$1"
@@ -62,7 +118,12 @@ for harness in agents claude codex pi grok; do
   mkdir -p "$skills_dir"
   for skill_dir in "$SCRIPT_DIR"/skills/*/; do
     [ -e "${skill_dir}SKILL.md" ] || continue
-    install_link "${skill_dir%/}" "${skills_dir}/$(basename "$skill_dir")"
+    name="$(basename "$skill_dir")"
+    if provided_by_luxonis "$name"; then
+      yield_to_luxonis "${skill_dir%/}" "${skills_dir}/${name}"
+    else
+      install_link "${skill_dir%/}" "${skills_dir}/${name}"
+    fi
   done
 done
 
