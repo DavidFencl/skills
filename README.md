@@ -16,7 +16,7 @@ git clone https://github.com/DavidFencl/skills.git ~/skills
 
 The installer symlinks each skill into `~/.agents/skills` for Orca and shared discovery, plus `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills` and `~/.grok/skills`, for each harness that is installed, honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR` and `GROK_HOME` when set. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
 
-The Luxonis version of a skill always wins. When the `luxonis` CLI is installed and signed in, the installer skips every skill that an enabled Luxonis Knowledge pack provides, and removes its own earlier link to that skill. Run `luxonis tick` afterwards to install the pack's copy right away. If the CLI is signed out or offline, the installer links every skill and prints a warning.
+The Luxonis version of a skill always wins. The installer reads `luxonis skills status`, which lists the skills the `luxonis` CLI installed on this machine and the pack skills it skipped because this repo's link held the name. It never links those skills, and it removes its own earlier link to them. Run `luxonis tick` afterwards to install the pack's copy. The installer changes only its own links and dangling links, so it never replaces the CLI's copies or any other copy already in place.
 
 ## add-frontend
 
