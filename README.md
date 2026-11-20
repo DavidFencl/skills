@@ -1,11 +1,10 @@
 # Skills
 
-Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`, and works in any harness that loads the [Agent Skills](https://agentskills.io) format: Claude Code, Codex, pi and Grok.
+Personal agent skills. Each skill is a folder under `skills/` with a `SKILL.md`, and works in any harness that loads the [Agent Skills](https://agentskills.io) format: Orca, Claude Code, Codex, pi and Grok.
 
 | Skill | Description |
 | --- | --- |
 | [`add-frontend`](skills/add-frontend/SKILL.md) | Adds a custom web page to a DepthAI v3 (Luxonis OAK camera) Python app. It copies a React and Vite template built on `@luxonis/depthai-viewer-common` and `@luxonis/ui-components`, adds one control per Python service, and edits the Python code so the app serves the page in peripheral mode, while `oakapp.toml` serves it on an OAK4 in standalone mode. |
-| [`design-sprint`](skills/design-sprint/SKILL.md) | Focused UI design sprint, run like an arena. Several models (Claude, Codex, Grok, pi models) build N variants of a screen, a component or a new feature from your design system as dev-only previews, plus single-property decision options. A local page walks you through the choices one step at a time: pick, keep the current version ("Do nothing" is always offered), or re-prompt any variant. It shows what the agent is doing and carries its questions, so you stay on the page until you submit. |
 | [`ui-changelog`](skills/ui-changelog/SKILL.md) | Visual changelog for frontend work. Maps the git diff to the pages, states and viewports it touches, captures before/after screenshots of the real app at both refs, circles what is new or modified with numbered close-ups, and writes an HTML review report plus PR-ready Markdown. It mocks missing or unsafe backends (REST, GraphQL, WebSocket, SSE, images, third-party scripts) with realistic data drafted from the project's own types. |
 
 ## Install
@@ -15,7 +14,9 @@ git clone https://github.com/DavidFencl/skills.git ~/skills
 ~/skills/install-globally.sh
 ```
 
-The installer symlinks each skill into `~/.claude/skills`, `~/.codex/skills`, `~/.pi/agent/skills` and `~/.grok/skills`, for each harness that is installed, honoring `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, `PI_CODING_AGENT_DIR` and `GROK_HOME` when set. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
+The installer symlinks each skill into the folders the `luxonis` CLI installs into. These are `~/.agents/skills`, which Orca, Codex and pi read and which the installer creates when Codex or pi is installed, plus `~/.claude/skills` and `~/.grok/skills` for each harness that is installed, honoring `CLAUDE_CONFIG_DIR` and `GROK_HOME` when set. It removes its own earlier links from `~/.codex/skills` and `~/.pi/agent/skills`, which would show Codex and pi a second copy. It runs on bash 3.2 (macOS) and later. Re-run it after adding a skill. Pulling the repo updates installed skills in place.
+
+The Luxonis version of a skill always wins. The installer reads `luxonis skills status`, which lists the skills the CLI installed on this machine and the pack skills it skipped because another copy held the name. It removes its own links to a skill the CLI installed. For a skipped pack skill, it removes its own links, runs `luxonis tick`, and links its copy again only if the CLI still did not install the pack's copy. The installer changes only its own links and dangling links, so it never replaces the CLI's copies or any other copy already in place.
 
 ## add-frontend
 
@@ -28,22 +29,6 @@ Ask the agent to "add a frontend to this OAK app" in a DepthAI v3 app. The agent
 5. Builds the page and runs `scripts/check.mjs`, which fails when the Python app and the page disagree on a stream or service name, or when either mode would serve no page.
 
 In peripheral mode the app serves the page at `http://localhost:8082`. On an OAK4 in standalone mode, the `luxonis/oakapp-base` image serves it. The template is derived from `custom-frontend/raw-stream` in `luxonis/oak-examples` (Apache-2.0); see [`assets/NOTICE`](skills/add-frontend/assets/NOTICE). Details are in [`references/frontend.md`](skills/add-frontend/references/frontend.md) and [`references/standalone.md`](skills/add-frontend/references/standalone.md).
-
-## design-sprint
-
-Invoke it with a screen or component and what to explore, or with a feature that does not exist yet (`new feature: bulk invite on the team page, 6 variants`). For a new feature, "Do nothing" means "don't add it", and the decisions appear once you pick a direction. The syntax depends on the harness: `/design-sprint` in Claude Code, `$design-sprint` in Codex, `/skill:design-sprint` in pi, and the skill name in Grok.
-
-- **Variants from several models.** `scripts/lanes.mjs` runs the lanes in parallel, each through its own CLI in headless mode (`claude -p`, `codex exec`, `grok --prompt-file`, `pi -p`). Each lane writes only its own preview directory. Every lane gets the same brief, so the variants differ by the models' own judgment, as in an arena. When you ask for more variants than there are models, the lanes are spread over the models, and each lane of a model that builds several gets its own angle, shown on its card. A lane that fails is recorded as a dropout, never silently replaced.
-- **Choosing models.** By default there is one lane per installed CLI on its default model. To pin models, write `~/.config/design-sprint/config.json`, or `.design-sprint/config.json` in a project:
-
-  ```json
-  { "models": ["claude:opus@high", "codex:gpt-6.1-sol@high", "grok:grok-4.7@high"], "variants": 6, "critic": "codex:gpt-6.1-sol@high", "blind": true }
-  ```
-
-  Each entry is `<cli>:<model>[@<effort>]`; an empty model uses that CLI's default. `blind` hides which model made each variant until you submit. `variants` sets how many variants the first round builds; the default is one per model. `node skills/design-sprint/scripts/lanes.mjs roster [--variants <n>]` prints the models and lanes a sprint will use.
-- **The sprint page** is served at `http://127.0.0.1:4390/` and opens before the lanes start, so you watch the variants being built there. It then asks one thing per step: the direction, each decision, and a review step that also asks what should happen after the sprint (implement the winner now, keep or delete the previews). A header shows whether the agent is listening or what it is working on, and each thing you send is marked received once the agent has it. The agent asks its follow-up questions on the page, never in the terminal. Preview files from the sprint directory come from a separate origin on port 4391, so preview code cannot act on the page. Your picks, re-prompts, answers and final answer go to `.design-sprint/<slug>/feedback.jsonl`. The agent waits on that file with `scripts/wait.mjs`, sends each re-prompt back to the model that built that variant, and the open page shows the result within a second.
-
-Everything needs only Node. `node --test skills/design-sprint/scripts/*.test.mjs` runs the skill's tests. The formats are in [`references/manifest.md`](skills/design-sprint/references/manifest.md) and [`references/lane-prompt.md`](skills/design-sprint/references/lane-prompt.md).
 
 ## ui-changelog
 
